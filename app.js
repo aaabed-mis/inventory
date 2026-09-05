@@ -69,7 +69,7 @@ function computeSkus(){
   const plantsOk = eligiblePlants();
   const q = state.search.trim().toLowerCase();
   // 1) aggregate inventory rows -> per matnr
-  const inv = new Map(); // matnr -> {qty,value,plants:Set}
+  const inv = new Map(); // matnr -> {qty,value,huom,plants:Set}
   for(const r of DATA.inventory){
     const m=r[0], w=r[1];
     if(!plantsOk.has(w)) continue;
@@ -78,8 +78,8 @@ function computeSkus(){
     if(state.matkl && (mat.matkl||'')!==state.matkl) continue;
     if(q && !(m+' '+(mat.maktx||'')).toLowerCase().includes(q)) continue;
     let o=inv.get(m);
-    if(!o){ o={qty:0,value:0,plants:new Set()}; inv.set(m,o); }
-    o.qty+=r[3]; o.value+=r[4]; o.plants.add(w);
+    if(!o){ o={qty:0,value:0,huom:0,plants:new Set()}; inv.set(m,o); }
+    o.qty+=r[3]; o.value+=r[4]; o.huom+=(r[6]||0); o.plants.add(w);
   }
   // 2) demand: office-scoped when plant/vkorg filter active, else company-wide
   const demand = new Map(); // matnr -> {qW,vW,q365,v365,lastSale}
@@ -128,16 +128,25 @@ function computeSkus(){
     if(future){ o.qty+=i.qty; o.value+=i.value; o.pos++; }
     else { o.overdueQty+=i.qty; o.overdueValue+=i.value; }
   }
-  // 4) assemble SKU rows (union of inv + demand + incoming matnrs)
-  const keys = new Set([...inv.keys(), ...demand.keys(), ...inc.keys()]);
+  // 3b) forecast: per matnr x plant (fact_forecast, current month)
+  const fc = new Map(); // matnr -> {qty,value}
+  for(const r of DATA.forecast_mat||[]){
+    if(!plantsOk.has(r[1])) continue;
+    let o=fc.get(r[0]);
+    if(!o){ o={qty:0,value:0}; fc.set(r[0],o); }
+    o.qty+=r[2]; o.value+=r[3];
+  }
+  // 4) assemble SKU rows (union of inv + demand + incoming + forecast matnrs)
+  const keys = new Set([...inv.keys(), ...demand.keys(), ...inc.keys(), ...fc.keys()]);
   const skus=[];
   const dailyW = state.window; // days in window
   for(const m of keys){
-    const iv=inv.get(m), dm=demand.get(m), ic=inc.get(m);
+    const iv=inv.get(m), dm=demand.get(m), ic=inc.get(m), fm=fc.get(m);
     const mat=DATA.mats[m]||{};
     if(q && !(m+' '+(mat.maktx||'')).toLowerCase().includes(q)) continue;
-    const qty=iv?iv.qty:0, value=iv?iv.value:0;
+    const qty=iv?iv.qty:0, value=iv?iv.value:0, huom=iv?iv.huom:0;
     const qW=dm?dm.qW:0, vW=dm?dm.vW:0, q365=dm?dm.q365:0, v365=dm?dm.v365:0;
+    const fcQty=fm?fm.qty:0;
     const dailyDemand=qW/dailyW;
     const coverage=dailyDemand>0?qty/dailyDemand:null;
     const incQty=ic?ic.qty:0, incValue=ic?ic.value:0, overdueQty=ic?ic.overdueQty:0;
@@ -167,8 +176,8 @@ function computeSkus(){
     if(state.replen && replen!==state.replen) continue;
     skus.push({matnr:m, maktx:mat.maktx||'', extwg:mat.extwg||'', ewbez:mat.ewbez||'',
       matkl:mat.matkl||'', wgbez:mat.wgbez||'', mfrnr:mat.mfrnr||'', name11:mat.name11||'',
-      qty, value, plantCount:iv?iv.plants.size:0,
-      qW, vW, q365, v365, dailyDemand, coverage,
+      qty, value, huom, plantCount:iv?iv.plants.size:0, plantsArr:iv?[...iv.plants]:[],
+      qW, vW, q365, v365, dailyDemand, coverage, fcQty,
       incQty, incValue, pos:ic?ic.pos:0, overdueQty, overdueValue:ic?ic.overdueValue:0,
       lastSale:dm?dm.lastSale:null, status, risk, replen});
   }
@@ -182,10 +191,12 @@ function aggregate(skus){
     criticalCount:0, highCount:0, excessValue:0, excessCount:0, slowValue:0, slowCount:0,
     salesQty:0, salesValue:0, incQty:0, incValue:0, posCount:0, overdueQty:0, overdueValue:0,
     coverageDays:null, totalDaily:0,
+    expiredValue:0, expiredCount:0, nearExpiryValue:0, nearExpiryCount:0,
     byStatus:{}, byRisk:{}, byExtwg:{}, byMatnr:{}
   };
   STATUS_ORDER.forEach(s=>a.byStatus[s]={value:0,count:0});
   RISK_ORDER.forEach(s=>a.byRisk[s]={count:0});
+  const aging = DATA.aging || {};
   for(const s of skus){
     a.invQty+=s.qty; a.invValue+=s.value;
     if(s.qty>0) a.skusInStock++;
@@ -198,6 +209,19 @@ function aggregate(skus){
     a.incQty+=s.incQty; a.incValue+=s.incValue; a.posCount+=s.pos;
     a.overdueQty+=s.overdueQty; a.overdueValue+=s.overdueValue;
     a.totalDaily+=s.dailyDemand;
+    // aging: aggregate per-SKU bucket values from batch-level DATA.aging (matnr|werks)
+    let exVal=0, exN=0, nearVal=0, nearN=0;
+    for(const w of s.plantsArr||[]){
+      const ag=aging[s.matnr+'|'+w];
+      if(!ag) continue;
+      exVal += ag['Expired']||0;
+      const near = (ag['0-30']||0)+(ag['31-60']||0)+(ag['61-90']||0)+(ag['91-120']||0);
+      nearVal += near;
+      if((ag['Expired']||0)>0) exN++;
+      if(near>0) nearN++;
+    }
+    a.expiredValue+=exVal; a.expiredCount+=exN;
+    a.nearExpiryValue+=nearVal; a.nearExpiryCount+=nearN;
     const st=a.byStatus[s.status]||(a.byStatus[s.status]={value:0,count:0});
     st.value+=s.value; st.count++;
     a.byRisk[s.risk].count++;
@@ -228,42 +252,7 @@ function byPlantInventory(){
   }
   return by;
 }
-function byOfficeSales(){
-  const plantsOk=eligiblePlants();
-  const q=state.search.trim().toLowerCase();
-  const catFilter = state.extwg || state.matkl || q;
-  const by={};
-  if(catFilter){
-    // category/search-scoped: aggregate office sales from material x office rows
-    const agg=new Map();
-    for(const r of DATA.sales_mat_office){
-      if(state.werks.size||state.vkorg){ if(!plantsOk.has(r[1])) continue; }
-      const mat=DATA.mats[r[0]]||{};
-      if(state.extwg && (mat.extwg||'')!==state.extwg) continue;
-      if(state.matkl && (mat.matkl||'')!==state.matkl) continue;
-      if(q && !(r[0]+' '+(mat.maktx||'')).toLowerCase().includes(q)) continue;
-      const W=state.window;
-      const qty=W===30?r[2]:W===60?r[4]:W===90?r[4]:r[6];
-      const val=W===30?r[3]:W===60?r[5]:W===90?r[5]:r[7];
-      let o=agg.get(r[1]);
-      if(!o){ o={qty:0,value:0,name:r[1]}; agg.set(r[1],o); }
-      o.qty+=qty; o.value+=val;
-    }
-    for(const [o,v] of agg){
-      const nm=(DATA.sales_office[o]&&DATA.sales_office[o].name)||o;
-      by[nm]=v;
-    }
-  } else {
-    for(const [o,info] of Object.entries(DATA.sales_office)){
-      if(state.werks.size||state.vkorg){ if(!plantsOk.has(o)) continue; }
-      const W=state.window;
-      const q2=W===30?info.q30:W===60?info.q60:W===90?info.q90:info.q365;
-      const v=W===30?info.v30:W===60?info.v60:W===90?info.v90:info.v365;
-      by[info.name||o]={qty:q2,value:v};
-    }
-  }
-  return by;
-}
+
 function incomingByMonth(){
   const plantsOk=eligiblePlants();
   const by={};
@@ -281,8 +270,8 @@ function incomingByMonth(){
 function renderKPIs(a){
   const cards=[
     {cls:'k-value',label:'Total Inventory Value',value:fmtMoney(a.invValue),sub:fmtInt(a.invQty)+' units · '+fmtInt(a.skuCount)+' SKUs'},
-    {cls:'k-value',label:'Total Inventory Qty',value:fmtInt(a.invQty)+' u',sub:'across '+fmtInt(a.skusInStock)+' SKUs in stock'},
-    {cls:'k-good',label:'Sales Value ('+state.window+'d)',value:fmtMoney(a.salesValue),sub:fmtInt(a.salesQty)+' units sold'},
+    {cls:'k-risk',label:'Expired Value',value:fmtMoney(a.expiredValue),sub:fmtNum(a.invValue?(a.expiredValue/a.invValue*100):0,1)+'% of stock · '+fmtInt(a.expiredCount)+' SKUs'},
+    {cls:'k-warn',label:'Near Expiry Value (0-120 days)',value:fmtMoney(a.nearExpiryValue),sub:fmtNum(a.invValue?(a.nearExpiryValue/a.invValue*100):0,1)+'% of stock · '+fmtInt(a.nearExpiryCount)+' SKUs'},
     {cls:'k-value',label:'Incoming PO Value',value:fmtMoney(a.incValue),sub:fmtInt(a.incQty)+' units · '+fmtInt(a.posCount)+' PO lines'},
     {cls:'k-risk',label:'Out-of-Stock SKUs',value:fmtInt(a.outOfStock),sub:fmtInt(a.outWithDemand)+' with recent demand'},
     {cls:'k-warn',label:'Critical / High Risk',value:fmtInt(a.criticalCount)+' / '+fmtInt(a.highCount),sub:'SKUs needing attention'},
@@ -298,24 +287,6 @@ function renderKPIs(a){
 }
 
 /* ---------- charts ---------- */
-function renderPareto(skus){
-  const top=[...skus].sort((x,y)=>y.value-x.value).slice(0,20);
-  const labels=top.map(s=>strip0(s.matnr));
-  const vals=top.map(s=>s.value);
-  const total=vals.reduce((x,y)=>x+y,0);
-  let cum=0; const pct=vals.map(v=>{cum+=v; return total>0?cum/total*100:0;});
-  const ctx=document.getElementById('chart-pareto');
-  if(charts.pareto)charts.pareto.destroy();
-  charts.pareto=new Chart(ctx,{type:'bar',data:{labels,datasets:[
-    {label:'Inventory value',data:vals,backgroundColor:'#4f8cff',borderRadius:6,yAxisID:'y',order:2},
-    {label:'Cumulative %',data:pct,type:'line',borderColor:cssVar('--text')||'#e7edf5',backgroundColor:cssVar('--text')||'#e7edf5',
-     borderWidth:2.5,tension:.3,pointRadius:3,pointBorderColor:cssVar('--text')||'#e7edf5',pointBackgroundColor:cssVar('--text')||'#e7edf5',yAxisID:'y1',order:1}
-  ]},options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
-    plugins:{legend:{labels:{usePointStyle:true}},
-      tooltip:{callbacks:{label:ctx2=>ctx2.dataset.yAxisID==='y1'?ctx2.raw.toFixed(1)+'% cum.':fmtMoney(ctx2.raw)}}},
-    scales:{y:{position:'left',title:{display:true,text:'Value'},ticks:{callback:v=>fmtMoneyM(v)}},
-      y1:{position:'right',title:{display:true,text:'Cumulative %'},min:0,max:100,grid:{drawOnChartArea:false},ticks:{callback:v=>v+'%'}}}}});
-}
 function renderStatus(a){
   const labels=STATUS_ORDER.filter(s=>a.byStatus[s]&&a.byStatus[s].count>0);
   const ctx=document.getElementById('chart-status');
@@ -336,42 +307,7 @@ function renderExtwg(a){
     options:{indexAxis:'y',maintainAspectRatio:false,
       plugins:{legend:{display:false},
         tooltip:{callbacks:{title:items=>items[0].label,label:c=>['Value: '+fmtMoney(c.raw),'Qty: '+fmtInt(entries[c.dataIndex][1].qty)+' · '+fmtInt(entries[c.dataIndex][1].count)+' SKUs']}}},
-      scales:{x:{ticks:{callback:v=>fmtMoneyM(v)}}}}});
-}
-function renderPlant(by){
-  const top=Object.entries(by).sort((x,y)=>y[1].value-x[1].value).slice(0,15);
-  const ctx=document.getElementById('chart-plant');
-  if(charts.plant)charts.plant.destroy();
-  charts.plant=new Chart(ctx,{type:'bar',data:{labels:top.map(e=>e[0]),
-    datasets:[{label:'Inventory value',data:top.map(e=>e[1].value),backgroundColor:'#22c1a4',borderRadius:6}]},
-    options:{maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>['Value: '+fmtMoney(c.raw),'Qty: '+fmtInt(top[c.dataIndex][1].qty)]}}},
-      scales:{y:{ticks:{callback:v=>fmtMoneyM(v)}}}}});
-}
-function renderTrend(){
-  const rows=DATA.trend_month.slice(-18);
-  const labels=rows.map(r=>{const y=String(r[0]); return y.slice(4,6)+'/'+y.slice(2,4);});
-  const ctx=document.getElementById('chart-trend');
-  if(charts.trend)charts.trend.destroy();
-  charts.trend=new Chart(ctx,{type:'bar',data:{labels,datasets:[
-    {label:'Qty',data:rows.map(r=>r[1]),backgroundColor:'#4f8cff',borderRadius:6,yAxisID:'y',order:2},
-    {label:'Value (M)',data:rows.map(r=>+(r[2]/1e6).toFixed(3)),type:'line',borderColor:cssVar('--text')||'#e7edf5',
-     backgroundColor:cssVar('--text')||'#e7edf5',borderWidth:2.5,tension:.3,pointRadius:3,yAxisID:'y1',order:1}
-  ]},options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
-    plugins:{legend:{labels:{usePointStyle:true}}},
-    scales:{y:{position:'left',title:{display:true,text:'Qty'},ticks:{callback:v=>fmtInt(v)}},
-      y1:{position:'right',title:{display:true,text:'Value (M SAR)'},grid:{drawOnChartArea:false},ticks:{callback:v=>v}}}}});
-}
-function renderSalesPlant(by){
-  const top=Object.entries(by).sort((x,y)=>y[1].value-x[1].value).slice(0,15);
-  const ctx=document.getElementById('chart-salesplant');
-  if(charts.salesplant)charts.salesplant.destroy();
-  charts.salesplant=new Chart(ctx,{type:'bar',data:{labels:top.map(e=>e[0]),
-    datasets:[{label:'Sales value',data:top.map(e=>e[1].value),backgroundColor:'#f5a623',borderRadius:6}]},
-    options:{maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>['Value: '+fmtMoney(c.raw),'Qty: '+fmtInt(top[c.dataIndex][1].qty)]}}},
-      scales:{y:{ticks:{callback:v=>fmtMoneyM(v)}}}}});
-}
+      scales:{x:{ticks:{callback:v=>fmtMoneyM(v)}}}}});}
 function renderRisk(a){
   const labels=RISK_ORDER.filter(s=>a.byRisk[s].count>0);
   const ctx=document.getElementById('chart-risk');
@@ -394,26 +330,7 @@ function renderIncoming(by){
   ]},options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
     plugins:{legend:{labels:{usePointStyle:true}}},
     scales:{y:{position:'left',title:{display:true,text:'Qty'},ticks:{callback:v=>fmtInt(v)}},
-      y1:{position:'right',title:{display:true,text:'Value (M SAR)'},grid:{drawOnChartArea:false},ticks:{callback:v=>v}}}}});
-}
-function renderScatter(skus){
-  // top SKUs by value (keep readable), x = inventory value, y = window sales value, r = incoming qty
-  const pts=[...skus].sort((x,y)=>y.value-x.value).slice(0,400)
-    .filter(s=>s.value>0||s.vW>0)
-    .map(s=>({x:s.value, y:s.vW, r:Math.min(22, 4+Math.sqrt(s.incQty)*0.35), sku:s}));
-  const ctx=document.getElementById('chart-scatter');
-  if(charts.scatter)charts.scatter.destroy();
-  charts.scatter=new Chart(ctx,{type:'scatter',data:{datasets:[
-    {label:'SKUs',data:pts,backgroundColor:pts.map(p=>RISK_COLOR[p.sku.risk]+'99'),borderColor:pts.map(p=>RISK_COLOR[p.sku.risk]),
-     borderWidth:1,pointRadius:pts.map(p=>p.r),pointHoverRadius:pts.map(p=>p.r+3)}
-  ]},options:{maintainAspectRatio:false,
-    plugins:{legend:{display:false},
-      tooltip:{callbacks:{title:items=>{const p=items[0].raw.sku; return strip0(p.matnr)+' – '+p.maktx;},
-        label:c=>{const p=c.raw.sku; return ['Inv value: '+fmtMoney(p.value),'Sales ('+state.window+'d): '+fmtMoney(p.vW)+' · '+fmtInt(p.qW)+' u',
-          'Incoming: '+fmtInt(p.incQty)+' u','Coverage: '+(p.coverage==null?'—':fmtNum(p.coverage,0)+' d'),'Risk: '+p.risk];}}}},
-    scales:{x:{type:'linear',title:{display:true,text:'Inventory value (SAR)'},ticks:{callback:v=>fmtMoneyM(v)}},
-      y:{type:'linear',title:{display:true,text:'Sales value ('+state.window+'d, SAR)'},ticks:{callback:v=>fmtMoneyM(v)}}}}});
-}
+      y1:{position:'right',title:{display:true,text:'Value (M SAR)'},grid:{drawOnChartArea:false},ticks:{callback:v=>v}}}}});}
 
 /* ---------- SKU table ---------- */
 const SKU_COLS=[
@@ -423,19 +340,19 @@ const SKU_COLS=[
   {k:'wgbez',t:'Mat.Grp',cls:''},
   {k:'plantCount',t:'Plants',cls:'num'},
   {k:'qty',t:'Qty',cls:'num'},
+  {k:'huom',t:'HUOM',cls:'num'},
   {k:'value',t:'Value',cls:'num'},
   {k:'qW',t:'Sales Qty',cls:'num'},
-  {k:'vW',t:'Sales Value',cls:'num'},
   {k:'dailyDemand',t:'Daily Sales',cls:'num'},
   {k:'coverage',t:'Coverage d',cls:'num'},
+  {k:'fcQty',t:'Forecast',cls:'num'},
   {k:'incQty',t:'Incoming Qty',cls:'num'},
-  {k:'incValue',t:'Incoming Value',cls:'num'},
   {k:'status',t:'Stock Status',cls:''},
   {k:'risk',t:'Risk',cls:''},
   {k:'lastSale',t:'Last Sale',cls:''},
 ];
-const SKU_HEAD=['SKU','Description','Ext Group','Mat.Grp','Plants','Qty','Value','Sales Qty','Sales Value','Daily Sales','Coverage d','Incoming Qty','Incoming Value','Stock Status','Risk','Last Sale'];
-const SKU_CSV_KEYS=['matnr','maktx','ewbez','wgbez','plantCount','qty','value','qW','vW','dailyDemand','coverage','incQty','incValue','status','risk','lastSale'];
+const SKU_HEAD=['SKU','Description','Ext Group','Mat.Grp','Plants','Qty','HUOM','Value','Sales Qty','Daily Sales','Coverage d','Forecast','Incoming Qty','Stock Status','Risk','Last Sale'];
+const SKU_CSV_KEYS=['matnr','maktx','ewbez','wgbez','plantCount','qty','huom','value','qW','dailyDemand','coverage','fcQty','incQty','status','risk','lastSale'];
 function drawSkuTable(skus){
   const cols=SKU_COLS;
   document.querySelector('#sku-table thead').innerHTML=
@@ -459,7 +376,7 @@ function drawSkuTable(skus){
       if(c.k==='risk') return `<td><span class="tag ${RISK_CLASS[v]||'t-None'}">${esc(v)}</span></td>`;
       if(c.k==='lastSale') return `<td>${v?esc(v.slice(0,10)):'—'}</td>`;
       if(c.k==='coverage') return `<td class="num">${v==null?'—':fmtNum(v,0)}</td>`;
-      if(c.k==='qty'||c.k==='qW'||c.k==='incQty') return `<td class="num">${fmtInt(v)}</td>`;
+      if(c.k==='qty'||c.k==='huom'||c.k==='fcQty'||c.k==='qW'||c.k==='incQty') return `<td class="num">${fmtInt(v)}</td>`;
       if(c.k==='dailyDemand') return `<td class="num">${fmtNum(v,1)}</td>`;
       if(c.k==='value'||c.k==='vW'||c.k==='incValue') return `<td class="num">${fmtMoney(v)}</td>`;
       return `<td class="num">${fmtInt(v)}</td>`;
@@ -630,15 +547,10 @@ function refresh(){
   const skus=computeSkus();
   const a=aggregate(skus);
   renderKPIs(a);
-  renderPareto(skus);
   renderStatus(a);
   renderExtwg(a);
-  renderPlant(byPlantInventory());
-  renderTrend();
-  renderSalesPlant(byOfficeSales());
   renderRisk(a);
   renderIncoming(incomingByMonth());
-  renderScatter(skus);
   drawSkuTable(skus);
   const poRows=filteredPoRows();
   drawPoTable(poRows);
@@ -757,6 +669,7 @@ function boot(){
   initTheme();
   initUI();
   refresh();
+  renderMethodology();
   const ld=document.getElementById('loading'); if(ld) ld.style.display='none';
 }
 boot();

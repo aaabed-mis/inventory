@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Inventory Dashboard</title>
   <link rel="icon" type="image/x-icon" href="assets/favicon.ico" />
-  <link rel="stylesheet" href="styles.css?v=20260903d" />
+  <link rel="stylesheet" href="styles.css?v=20260905e" />
 </head>
 <body>
   <header class="topbar">
@@ -77,10 +77,6 @@
 
   <!-- Charts grid -->
   <section class="grid">
-    <div class="card span-2">
-      <div class="card-head"><h2>Top 20 SKUs by Inventory Value</h2><span class="hint">value bars · cumulative % line</span></div>
-      <div class="chart-wrap"><canvas id="chart-pareto"></canvas></div>
-    </div>
     <div class="card">
       <div class="card-head"><h2>Stock Status</h2><span class="hint">inventory value by status</span></div>
       <div class="chart-wrap"><canvas id="chart-status"></canvas></div>
@@ -90,28 +86,12 @@
       <div class="chart-wrap tall"><canvas id="chart-extwg"></canvas></div>
     </div>
     <div class="card">
-      <div class="card-head"><h2>Inventory Value by Warehouse</h2><span class="hint">top 15 plants</span></div>
-      <div class="chart-wrap tall"><canvas id="chart-plant"></canvas></div>
-    </div>
-    <div class="card span-2">
-      <div class="card-head"><h2>Sales &amp; Demand Trend</h2><span class="hint">net quantity vs net value by month</span></div>
-      <div class="chart-wrap"><canvas id="chart-trend"></canvas></div>
-    </div>
-    <div class="card">
-      <div class="card-head"><h2>Sales by Warehouse</h2><span class="hint">top 15 offices</span></div>
-      <div class="chart-wrap tall"><canvas id="chart-salesplant"></canvas></div>
-    </div>
-    <div class="card">
       <div class="card-head"><h2>SKU Risk Profile</h2><span class="hint">SKU count by risk level</span></div>
       <div class="chart-wrap"><canvas id="chart-risk"></canvas></div>
     </div>
     <div class="card span-2">
       <div class="card-head"><h2>Incoming Supply by Delivery Month</h2><span class="hint">open PO quantity and value</span></div>
       <div class="chart-wrap"><canvas id="chart-incoming"></canvas></div>
-    </div>
-    <div class="card span-3">
-      <div class="card-head"><h2>Inventory Value vs Sales (demand window)</h2><span class="hint">bubble = each SKU; size = incoming qty</span></div>
-      <div class="chart-wrap tall"><canvas id="chart-scatter"></canvas></div>
     </div>
   </section>
 
@@ -181,7 +161,7 @@
   <div class="loading" id="loading"><div><div class="spin"></div>Loading inventory data…</div></div>
 
   <script src="assets/chart.umd.min.js"></script>
-  <script src="data/data.js?v=20260903d"></script>
-  <script src="app.js?v=20260903d"></script>
+  <script src="data/data.js?v=20260905e"></script>
+  <script src="app.js?v=20260905e"></script>
 </body>
 </html>

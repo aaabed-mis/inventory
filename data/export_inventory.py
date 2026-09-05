@@ -28,6 +28,7 @@ INV = os.path.join(DUCK, "fact_inventory.duckdb")
 SALES = os.path.join(DUCK, "fact_ztsd_detail.duckdb")
 INCOMING = os.path.join(DUCK, "fact_incoming.duckdb")
 VENDORS = os.path.join(DUCK, "dim_vendors.duckdb")
+FORECAST = os.path.join(DUCK, "fact_forecast.duckdb")
 
 WINDOWS = [30, 60, 90, 365]
 
@@ -43,20 +44,71 @@ def strip_matnr(v):
 
 print("Reading fact_inventory ...")
 con = duckdb.connect(INV, read_only=True)
-# 1) inventory at matnr+werks grain
+# 1) inventory at matnr+werks grain (qty = SUM(clabs), huom = SUM(huom))
 rows, names = q(con, """
 SELECT matnr, werks, vkorg,
        SUM(clabs) AS qty,
        ROUND(SUM(clabs * COALESCE(ma_price,0)), 2) AS value,
-       COUNT(*) AS batches
+       COUNT(*) AS batches,
+       ROUND(SUM(COALESCE(huom,0)), 4) AS huom
 FROM sap_prd.fact_inventory
 GROUP BY 1,2,3
 """)
-inv_idx = {}   # (matnr,werks) -> [qty,value,batches]
+inv_idx = {}   # (matnr,werks) -> [qty,value,batches,huom]
 plants = {}    # werks -> name1
-for matnr, werks, vkorg, qty, value, batches in rows:
+for matnr, werks, vkorg, qty, value, batches, huom in rows:
     m = strip_matnr(matnr)
-    inv_idx[(m, werks)] = [round(float(qty), 4), round(float(value), 2), int(batches)]
+    inv_idx[(m, werks)] = [round(float(qty), 4), round(float(value), 2), int(batches), round(float(huom), 4)]
+
+# 1b) aging per batch: mirror MaterialAgingDashboard logic.
+#     VKORG 1000/blank -> aging date = CHARG (YYYY.MM.DD); VKORG 6000 -> VFDAT (YYYYMMDD).
+#     Bucket = days from TODAY; <0 Expired, <=30 0-30, <=60 31-60, <=90 61-90, <=120 91-120, else >120 Days.
+import datetime as _dt
+AGING_TODAY = _dt.date.today()
+
+def _parse_aging_date(s):
+    if not s: return None
+    s = str(s).strip()
+    if len(s) == 10 and s[4] == '.' and s[7] == '.':
+        try: return _dt.datetime.strptime(s, "%Y.%m.%d").date()
+        except Exception: pass
+    if len(s) == 8 and s.isdigit():
+        try: return _dt.datetime.strptime(s, "%Y%m%d").date()
+        except Exception: pass
+    return None
+
+def aging_bucket(vkorg, charg, vfdat):
+    v = (vkorg or '').strip()
+    d = _parse_aging_date(charg) if v in ('1000', '', ' ') else _parse_aging_date(vfdat)
+    if d is None:
+        return '>120 Days'
+    delta = (d - AGING_TODAY).days
+    if delta < 0:       return 'Expired'
+    elif delta <= 30:   return '0-30'
+    elif delta <= 60:   return '31-60'
+    elif delta <= 90:   return '61-90'
+    elif delta <= 120:  return '91-120'
+    return '>120 Days'
+
+# per (matnr,werks): value by aging bucket  (batch-level, value = clabs*ma_price per batch)
+aging_rows, _ = q(con, """
+SELECT matnr, werks, vkorg, charg, vfdat, clabs, ma_price
+FROM sap_prd.fact_inventory
+""")
+aging = {}   # (matnr,werks) -> {bucket: value}
+for matnr, werks, vkorg, charg, vfdat, clabs, ma_price in aging_rows:
+    m = strip_matnr(matnr)
+    cl = float(clabs or 0); mp = float(ma_price or 0)
+    if cl == 0 or mp == 0:
+        continue
+    b = aging_bucket(vkorg, charg, vfdat)
+    key = m + "|" + werks
+    d = aging.get(key)
+    if d is None:
+        d = {'Expired':0.0,'0-30':0.0,'31-60':0.0,'61-90':0.0,'91-120':0.0,'>120 Days':0.0}
+        aging[key] = d
+    d[b] += round(cl * mp, 2)
+print("  aging rows (matnr x werks with batch aging):", len(aging))
 # 2) plants dim (werks -> name1, regio, vkorg)
 prows, _ = q(con, """
 SELECT werks, MIN(name1) name1, MIN(regio) regio, MIN(vkorg) vkorg
@@ -112,7 +164,8 @@ except Exception as e:
     print("  WARN dim_material_master:", e)
 
 def win_expr(col, days, ref):
-    return f"SUM(CASE WHEN {col} > DATE '{ref}' - INTERVAL {days} DAY AND {col} <= DATE '{ref}' THEN quantity ELSE 0 END)"
+    # SKU Analysis: qty windows use QTY_IN_SKU (SKU/base units)
+    return f"SUM(CASE WHEN {col} > DATE '{ref}' - INTERVAL {days} DAY AND {col} <= DATE '{ref}' THEN qty_in_sku ELSE 0 END)"
 
 def win_val_expr(col, days, ref):
     return f"SUM(CASE WHEN {col} > DATE '{ref}' - INTERVAL {days} DAY AND {col} <= DATE '{ref}' THEN net_value ELSE 0 END)"
@@ -215,6 +268,24 @@ except Exception as e:
 for row in incoming:
     row["vendor_name"] = vendors.get(row["vendor"], "") or row["vendor"]
 
+print("Reading fact_forecast ...")
+# forecast per material x plant (current month only; fact_forecast holds one ZMONTH)
+forecast_mat = []
+fc_months = set()
+try:
+    con = duckdb.connect(FORECAST, read_only=True)
+    for matnr, werks, zmonth, fqty, fval in con.execute(
+        "SELECT material, werks, zmonth, ROUND(SUM(zbqty),4), ROUND(SUM(zbvalue),2) "
+        "FROM sap_prd.fact_forecast GROUP BY 1,2,3"
+    ).fetchall():
+        m = strip_matnr(matnr)
+        forecast_mat.append([m, werks, float(fqty or 0), float(fval or 0)])
+        fc_months.add(zmonth)
+    con.close()
+    print("  forecast mat x plant combos:", len(forecast_mat), "| months:", sorted(fc_months))
+except Exception as e:
+    print("  WARN fact_forecast:", e)
+
 # plant dims union: add incoming plants + sales offices not in inventory plants
 for row in incoming:
     p = row["plant"]
@@ -224,25 +295,29 @@ for o, info in sales_office.items():
     if o and o not in plants:
         plants[o] = {"name1": info["name"], "regio": "", "vkorg": ""}
 
-# build compact inventory array
+# build compact inventory array: [matnr, werks, vkorg, qty, value, batches, huom]
 inventory = []
-for (m, w), (qty, value, batches) in inv_idx.items():
-    inventory.append([m, w, plants.get(w, {}).get("vkorg", ""), qty, value, batches])
+for (m, w), (qty, value, batches, huom) in inv_idx.items():
+    inventory.append([m, w, plants.get(w, {}).get("vkorg", ""), qty, value, batches, huom])
 inventory.sort(key=lambda r: -r[4])
 
 meta = {
     "generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    "source": "fact_inventory + fact_ztsd_detail + fact_incoming (duckdb)",
+    "source": "fact_inventory + fact_ztsd_detail + fact_incoming + fact_forecast (duckdb)",
     "ref_date": ref.isoformat(),
     "windows": WINDOWS,
     "grain": "matnr x werks (inventory); demand windows pre-aggregated",
     "inv_combos": len(inventory), "materials": len(mats), "plants": len(plants),
     "sales_materials": len(sales_mat), "incoming_lines": len(incoming),
+    "forecast_combos": len(forecast_mat), "forecast_months": sorted(fc_months),
     "notes": [
         "Inventory value = SUM(clabs x ma_price) per matnr+werks (421 rows have zero ma_price; included at 0 value).",
-        "Sales = net quantity / NET_VALUE (returns & credit memos are negative rows).",
+        "Inventory qty = SUM(clabs); HUOM = SUM(huom) (handling units) from fact_inventory.",
+        "Sales qty = SUM(qty_in_sku) (SKU/base units); value windows use NET_VALUE (returns & credit memos negative).",
         "Demand windows anchored to ref_date (max sales date).",
         "Incoming = open PO lines (all delivery dates; overdue flagged client-side).",
+        "Forecast = fact_forecast per material x plant (current month, zbqty/zbvalue).",
+        "Aging buckets mirror MaterialAgingDashboard: VKORG 1000/blank -> CHARG date; VKORG 6000 -> VFDAT; days from export run date.",
     ],
 }
 
@@ -251,11 +326,13 @@ payload = {
     "plants": plants,
     "mats": mats,
     "inventory": inventory,
+    "aging": aging,
     "sales_mat": sales_mat,
     "sales_office": sales_office,
     "sales_mat_office": sales_mat_office,
     "trend_month": trend_month,
     "incoming": incoming,
+    "forecast_mat": forecast_mat,
 }
 
 for path, as_js in [(OUT_JSON, False), (OUT_JS, True)]:

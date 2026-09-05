@@ -77,7 +77,7 @@ code{background:var(--panel-2);padding:1px 6px;border-radius:6px;font-size:12px;
 /* Multi-select (plant) */
 .ms{position:relative}
 .ms-toggle{background:var(--panel);border:1px solid var(--line);border-radius:10px;
-  padding:9px 11px;font-size:13px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;min-width:150px}
+  padding:9px 11px;font-size:13px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;min-width:150px;color:var(--text)}
 .ms-toggle .cnt{color:var(--accent);font-weight:600}
 .ms-toggle .chev{color:var(--muted);transition:.2s}
 .ms.open .ms-toggle .chev{transform:rotate(180deg)}
