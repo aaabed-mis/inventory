@@ -5,9 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Inventory Dashboard</title>
   <link rel="icon" type="image/x-icon" href="assets/favicon.ico" />
-  <link rel="stylesheet" href="styles.css?v=20260905h" />
+  <link rel="stylesheet" href="styles.css?v=20260906d" />
 </head>
 <body>
+  <div id="scale-wrap">
   <header class="topbar">
     <div class="brand">
       <img class="brand-mark" src="assets/logo.png" alt="Logo" />
@@ -98,7 +99,7 @@
   <!-- SKU analysis table -->
   <section class="card table-card">
     <div class="card-head">
-      <h2>SKU Analysis</h2>
+      <h2>Material Analysis</h2>
       <div class="head-right">
         <select id="f-topn" class="select small" title="Number of rows">
           <option value="25">Top 25</option>
@@ -157,11 +158,12 @@
     <div class="card-head"><h2>Methodology &amp; Data Notes</h2></div>
     <div id="methodology" class="insights notes"></div>
   </section>
+  </div>
 
   <div class="loading" id="loading"><div><div class="spin"></div>Loading inventory data…</div></div>
 
   <script src="assets/chart.umd.min.js"></script>
-  <script src="data/data.js?v=20260905h"></script>
-  <script src="app.js?v=20260905h"></script>
+  <script src="data/data.js?v=20260906d"></script>
+  <script src="app.js?v=20260906d"></script>
 </body>
 </html>

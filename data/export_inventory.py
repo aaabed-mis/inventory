@@ -158,20 +158,29 @@ for matnr, maktx, extwg, ewbez, matkl, wgbez, mfrnr, name11 in srows:
         mats[m] = {"maktx": maktx or "", "matkl": matkl or "", "wgbez": wgbez or "",
                    "extwg": extwg or "", "ewbez": ewbez or "", "mfrnr": mfrnr or "", "name11": name11 or ""}
 
-# material dims fallback 2: dim_material_master (catches incoming-only materials)
+# material dims fallback 2: dim_material_master (catches incoming-only materials) + lead_time/safety_stock enrichment
 try:
     mm = duckdb.connect(os.path.join(DUCK, "dim_material_master.duckdb"), read_only=True)
-    for matnr, maktx, matkl, wgbez, extwg, ewbez, mfrnr in mm.execute(
-        "SELECT matnr, maktx, matkl, wgbez, extwg, ewbez, mfrnr FROM sap_prd.dim_material_master"
+    ltss = {}   # matnr -> [lead_time, safety_stock]
+    for matnr, maktx, matkl, wgbez, extwg, ewbez, mfrnr, lead_time, safety_stock in mm.execute(
+        "SELECT matnr, maktx, matkl, wgbez, extwg, ewbez, mfrnr, lead_time, safety_stock FROM sap_prd.dim_material_master"
     ).fetchall():
         m = strip_matnr(matnr)
+        ltss[m] = [float(lead_time or 0), float(safety_stock or 0)]
         if m not in mats:
             mats[m] = {"maktx": maktx or "", "matkl": matkl or "", "wgbez": wgbez or "",
                        "extwg": extwg or "", "ewbez": ewbez or "", "mfrnr": mfrnr or "", "name11": ""}
     mm.close()
-    print("  dim_material_master fallback loaded")
+    print("  dim_material_master fallback loaded:", len(ltss), "with lead_time/safety_stock")
 except Exception as e:
     print("  WARN dim_material_master:", e)
+    ltss = {}
+
+# enrich every material dim with lead_time / safety_stock from dim_material_master
+for m, dim in mats.items():
+    v = ltss.get(m)
+    dim["lead_time"] = v[0] if v else 0
+    dim["safety_stock"] = v[1] if v else 0
 
 def win_expr(col, days, ref):
     # SKU Analysis: qty windows use QTY_IN_SKU (SKU/base units)
