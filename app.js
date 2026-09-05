@@ -138,12 +138,29 @@ function computeSkus(){
   }
   // 4) assemble SKU rows (union of inv + demand + incoming + forecast matnrs)
   const keys = new Set([...inv.keys(), ...demand.keys(), ...inc.keys(), ...fc.keys()]);
+  // aging per matnr (plant-filtered, from the authoritative aging payload) so
+  // Expired / Near-Expiry KPIs match the Material Aging Dashboard exactly
+  const agingByMat = new Map(); // matnr -> {expiredVal, expiredBatches, nearVal, nearQty, nearBatches}
+  for(const [k, ag] of Object.entries(DATA.aging||{})){
+    const bar = k.indexOf('|');
+    const m = k.slice(0, bar), w = k.slice(bar+1);
+    if(!plantsOk.has(w)) continue;
+    let o = agingByMat.get(m);
+    if(!o){ o={expiredVal:0, expiredBatches:0, nearVal:0, nearQty:0, nearBatches:0}; agingByMat.set(m,o); }
+    const ex = ag['Expired']||[0,0,0];
+    o.expiredVal += ex[0]; o.expiredBatches += ex[2];
+    for(const b of ['0-30','31-60','61-90','91-120']){
+      const v = ag[b]||[0,0,0];
+      o.nearVal += v[0]; o.nearQty += v[1]; o.nearBatches += v[2];
+    }
+  }
   const skus=[];
   const dailyW = state.window; // days in window
   for(const m of keys){
     const iv=inv.get(m), dm=demand.get(m), ic=inc.get(m), fm=fc.get(m);
     const mat=DATA.mats[m]||{};
     if(q && !(m+' '+(mat.maktx||'')).toLowerCase().includes(q)) continue;
+    const agm = agingByMat.get(m)||{expiredVal:0, expiredBatches:0, nearVal:0, nearQty:0, nearBatches:0};
     const qty=iv?iv.qty:0, value=iv?iv.value:0, huom=iv?iv.huom:0;
     const qW=dm?dm.qW:0, vW=dm?dm.vW:0, q365=dm?dm.q365:0, v365=dm?dm.v365:0;
     const fcQty=fm?fm.qty:0;
@@ -178,6 +195,8 @@ function computeSkus(){
       matkl:mat.matkl||'', wgbez:mat.wgbez||'', mfrnr:mat.mfrnr||'', name11:mat.name11||'',
       qty, value, huom, plantCount:iv?iv.plants.size:0, plantsArr:iv?[...iv.plants]:[],
       qW, vW, q365, v365, dailyDemand, coverage, fcQty,
+      expiredVal:agm.expiredVal, expiredBatches:agm.expiredBatches,
+      nearVal:agm.nearVal, nearQty:agm.nearQty, nearBatches:agm.nearBatches,
       incQty, incValue, pos:ic?ic.pos:0, overdueQty, overdueValue:ic?ic.overdueValue:0,
       lastSale:dm?dm.lastSale:null, status, risk, replen});
   }
@@ -191,12 +210,11 @@ function aggregate(skus){
     criticalCount:0, highCount:0, excessValue:0, excessCount:0, slowValue:0, slowCount:0,
     salesQty:0, salesValue:0, incQty:0, incValue:0, posCount:0, overdueQty:0, overdueValue:0,
     coverageDays:null, totalDaily:0,
-    expiredValue:0, expiredCount:0, nearExpiryValue:0, nearExpiryCount:0,
+    expiredValue:0, expiredBatches:0, nearExpiryValue:0, nearExpiryQty:0, nearExpiryBatches:0,
     byStatus:{}, byRisk:{}, byExtwg:{}, byMatnr:{}
   };
   STATUS_ORDER.forEach(s=>a.byStatus[s]={value:0,count:0});
   RISK_ORDER.forEach(s=>a.byRisk[s]={count:0});
-  const aging = DATA.aging || {};
   for(const s of skus){
     a.invQty+=s.qty; a.invValue+=s.value;
     if(s.qty>0) a.skusInStock++;
@@ -209,19 +227,9 @@ function aggregate(skus){
     a.incQty+=s.incQty; a.incValue+=s.incValue; a.posCount+=s.pos;
     a.overdueQty+=s.overdueQty; a.overdueValue+=s.overdueValue;
     a.totalDaily+=s.dailyDemand;
-    // aging: aggregate per-SKU bucket values from batch-level DATA.aging (matnr|werks)
-    let exVal=0, exN=0, nearVal=0, nearN=0;
-    for(const w of s.plantsArr||[]){
-      const ag=aging[s.matnr+'|'+w];
-      if(!ag) continue;
-      exVal += ag['Expired']||0;
-      const near = (ag['0-30']||0)+(ag['31-60']||0)+(ag['61-90']||0)+(ag['91-120']||0);
-      nearVal += near;
-      if((ag['Expired']||0)>0) exN++;
-      if(near>0) nearN++;
-    }
-    a.expiredValue+=exVal; a.expiredCount+=exN;
-    a.nearExpiryValue+=nearVal; a.nearExpiryCount+=nearN;
+    // aging: per-SKU totals pre-aggregated in computeSkus from DATA.aging (authoritative aging payload)
+    a.expiredValue += s.expiredVal||0; a.expiredBatches += s.expiredBatches||0;
+    a.nearExpiryValue += s.nearVal||0; a.nearExpiryQty += s.nearQty||0; a.nearExpiryBatches += s.nearBatches||0;
     const st=a.byStatus[s.status]||(a.byStatus[s.status]={value:0,count:0});
     st.value+=s.value; st.count++;
     a.byRisk[s.risk].count++;
@@ -270,8 +278,8 @@ function incomingByMonth(){
 function renderKPIs(a){
   const cards=[
     {cls:'k-value',label:'Total Inventory Value',value:fmtMoney(a.invValue),sub:fmtInt(a.invQty)+' units · '+fmtInt(a.skuCount)+' SKUs'},
-    {cls:'k-risk',label:'Expired Value',value:fmtMoney(a.expiredValue),sub:fmtNum(a.invValue?(a.expiredValue/a.invValue*100):0,1)+'% of stock · '+fmtInt(a.expiredCount)+' SKUs'},
-    {cls:'k-warn',label:'Near Expiry Value (0-120 days)',value:fmtMoney(a.nearExpiryValue),sub:fmtNum(a.invValue?(a.nearExpiryValue/a.invValue*100):0,1)+'% of stock · '+fmtInt(a.nearExpiryCount)+' SKUs'},
+    {cls:'k-risk',label:'Expired Value',value:fmtMoney(a.expiredValue),sub:fmtNum(a.invValue?(a.expiredValue/a.invValue*100):0,1)+'% of stock · '+fmtInt(a.expiredBatches)+' batches'},
+    {cls:'k-warn',label:'Near Expiry Value (0-120 days)',value:fmtMoney(a.nearExpiryValue),sub:fmtInt(a.nearExpiryQty)+' units · '+fmtInt(a.nearExpiryBatches)+' batches'},
     {cls:'k-value',label:'Incoming PO Value',value:fmtMoney(a.incValue),sub:fmtInt(a.incQty)+' units · '+fmtInt(a.posCount)+' PO lines'},
     {cls:'k-risk',label:'Out-of-Stock SKUs',value:fmtInt(a.outOfStock),sub:fmtInt(a.outWithDemand)+' with recent demand'},
     {cls:'k-warn',label:'Critical / High Risk',value:fmtInt(a.criticalCount)+' / '+fmtInt(a.highCount),sub:'SKUs needing attention'},

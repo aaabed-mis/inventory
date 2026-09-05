@@ -60,7 +60,9 @@ for matnr, werks, vkorg, qty, value, batches, huom in rows:
     m = strip_matnr(matnr)
     inv_idx[(m, werks)] = [round(float(qty), 4), round(float(value), 2), int(batches), round(float(huom), 4)]
 
-# 1b) aging per batch: mirror MaterialAgingDashboard logic.
+# 1b) aging per batch: mirror MaterialAgingDashboard EXACTLY.
+#     Source of truth = material_aging.duckdb (same table the aging dashboard's export_aging.py reads),
+#     so Expired / Near-Expiry values match the Material Aging Dashboard KPI cards.
 #     VKORG 1000/blank -> aging date = CHARG (YYYY.MM.DD); VKORG 6000 -> VFDAT (YYYYMMDD).
 #     Bucket = days from TODAY; <0 Expired, <=30 0-30, <=60 31-60, <=90 61-90, <=120 91-120, else >120 Days.
 import datetime as _dt
@@ -90,24 +92,32 @@ def aging_bucket(vkorg, charg, vfdat):
     elif delta <= 120:  return '91-120'
     return '>120 Days'
 
-# per (matnr,werks): value by aging bucket  (batch-level, value = clabs*ma_price per batch)
-aging_rows, _ = q(con, """
-SELECT matnr, werks, vkorg, charg, vfdat, clabs, ma_price
-FROM sap_prd.fact_inventory
-""")
-aging = {}   # (matnr,werks) -> {bucket: value}
-for matnr, werks, vkorg, charg, vfdat, clabs, ma_price in aging_rows:
-    m = strip_matnr(matnr)
-    cl = float(clabs or 0); mp = float(ma_price or 0)
-    if cl == 0 or mp == 0:
-        continue
-    b = aging_bucket(vkorg, charg, vfdat)
-    key = m + "|" + werks
-    d = aging.get(key)
-    if d is None:
-        d = {'Expired':0.0,'0-30':0.0,'31-60':0.0,'61-90':0.0,'91-120':0.0,'>120 Days':0.0}
-        aging[key] = d
-    d[b] += round(cl * mp, 2)
+# per (matnr,werks): value/qty/batches by aging bucket (batch-level, value = clabs*ma_price per batch)
+print("Reading material_aging (aging source of truth) ...")
+aging = {}   # matnr|werks -> {bucket: [value, qty, batches]}
+try:
+    acon = duckdb.connect(os.path.join(DUCK, "material_aging.duckdb"), read_only=True)
+    aging_rows = acon.execute("""
+        SELECT matnr, werks, vkorg, charg, vfdat, clabs, ma_price
+        FROM sap_prd.material_aging
+    """).fetchall()
+    acon.close()
+    for matnr, werks, vkorg, charg, vfdat, clabs, ma_price in aging_rows:
+        m = strip_matnr(matnr)
+        cl = float(clabs or 0); mp = float(ma_price or 0)
+        if cl == 0:  # count all CLABS>0 batches (price-0 rows add 0 value but count, matching aging dashboard)
+            continue
+        b = aging_bucket(vkorg, charg, vfdat)
+        key = m + "|" + werks
+        d = aging.get(key)
+        if d is None:
+            d = {'Expired':[0.0,0.0,0],'0-30':[0.0,0.0,0],'31-60':[0.0,0.0,0],'61-90':[0.0,0.0,0],'91-120':[0.0,0.0,0],'>120 Days':[0.0,0.0,0]}
+            aging[key] = d
+        d[b][0] += round(cl * mp, 2)
+        d[b][1] += cl
+        d[b][2] += 1
+except Exception as e:
+    print("  WARN material_aging read failed (aging KPIs will be 0):", e)
 print("  aging rows (matnr x werks with batch aging):", len(aging))
 # 2) plants dim (werks -> name1, regio, vkorg)
 prows, _ = q(con, """
@@ -318,6 +328,7 @@ meta = {
         "Incoming = open PO lines (all delivery dates; overdue flagged client-side).",
         "Forecast = fact_forecast per material x plant (current month, zbqty/zbvalue).",
         "Aging buckets mirror MaterialAgingDashboard: VKORG 1000/blank -> CHARG date; VKORG 6000 -> VFDAT; days from export run date.",
+        "Aging source of truth = material_aging.duckdb (same table as Material Aging Dashboard) so Expired/Near-Expiry KPIs match it exactly.",
     ],
 }
 
