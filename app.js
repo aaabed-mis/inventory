@@ -173,7 +173,7 @@ function computeSkus(){
     const qW = dm?dm.qW:0;                          // Sales Qty in PIECES (payload in base units)
     const dailyDemand = qW/dailyW;                  // daily demand in PIECES (matches qty in pieces)
     const vW=dm?dm.vW:0, q365=dm?dm.q365:0, v365=dm?dm.v365:0;
-    const incQty=ic?ic.qty:0, incValue=ic?ic.value:0, overdueQty=ic?ic.overdueQty:0;
+    const incQty=ic?(ic.qty*umrez):0, incValue=ic?ic.value:0, overdueQty=ic?ic.overdueQty:0;   // Incoming Qty in cartons -> pieces (× umrez)
     // ---- lead time / safety stock aware (from dim_material_master) ----
     const leadTime=mat.lead_time||0, safetyStockPcs=mat.safety_stock||0;
     const safetyStock = safetyStockPcs;          // Safety Stock in pieces
