@@ -115,7 +115,7 @@ function computeSkus(){
                     q365:s.q365, v365:s.v365, lastSale:s.last_sale});
     }
   }
-  // 3) incoming: future-dated lines per matnr
+  // 3) incoming: ALL open PO lines per matnr (regardless of status — incl. overdue), per user 2026-09-06
   const inc = new Map(); // matnr -> {qty,value,pos,overdueQty,overdueValue}
   for(const i of DATA.incoming){
     if(!plantsOk.has(i.plant)) continue;
@@ -126,8 +126,8 @@ function computeSkus(){
     const future = i.del_date && i.del_date >= AS_OF;
     let o=inc.get(i.matnr);
     if(!o){ o={qty:0,value:0,pos:0,overdueQty:0,overdueValue:0}; inc.set(i.matnr,o); }
-    if(future){ o.qty+=i.qty; o.value+=i.value; o.pos++; }
-    else { o.overdueQty+=i.qty; o.overdueValue+=i.value; }
+    o.qty+=i.qty; o.value+=i.value; o.pos++;   // sum ALL lines regardless of status
+    if(!future){ o.overdueQty+=i.qty; o.overdueValue+=i.value; }
   }
   // 3b) forecast: per matnr x plant (fact_forecast, current month)
   const fc = new Map(); // matnr -> {qty,value}
