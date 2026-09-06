@@ -24,6 +24,7 @@ let DATA = null;   // window.__INVENTORY__
 const state = {
   vkorg:'', werks:new Set(), extwg:'', matkl:'', maabc:'', window:90, status:'', risk:'', replen:'', search:'',
   sortKey:'value', sortDir:-1, page:1, pageSize:50,
+  colWidths:{},   // per-column px widths (Material Analysis resize)
   poSortKey:'del_date', poSortDir:1, poPage:1, poPageSize:50, topN:50,
   itSortKey:'po', itSortDir:1, itPage:1, itPageSize:50
 };
@@ -447,7 +448,44 @@ function drawSkuTable(skus){
   document.getElementById('page-info').textContent='Page '+state.page+' of '+pages+' · '+fmtInt(total)+' SKUs';
   document.getElementById('prev').disabled=state.page<=1;
   document.getElementById('next').disabled=state.page>=pages;
+  setupSkuResize();
 }
+function setupSkuResize(){
+  const tbl=document.getElementById('sku-table'); if(!tbl) return;
+  const cols=SKU_COLS;
+  // (re)build colgroup so resized widths persist across renders
+  let cg=tbl.querySelector('colgroup');
+  if(!cg){ cg=document.createElement('colgroup'); tbl.insertBefore(cg, tbl.querySelector('thead')); }
+  cg.innerHTML=cols.map(c=>{ const w=state.colWidths[c.k]; return w?`<col style="width:${w}px">`:'<col>'; }).join('');
+  // add a drag handle to each header cell
+  tbl.querySelectorAll('thead th').forEach((th,i)=>{
+    const k=cols[i]&&cols[i].k; if(!k) return;
+    if(th.querySelector('.th-resizer')) return;
+    const r=document.createElement('div');
+    r.className='th-resizer'; r.dataset.k=k;
+    r.addEventListener('click', e=>e.stopPropagation()); // dragging a handle must not sort
+    th.appendChild(r);
+  });
+}
+let skuResize=null;
+document.addEventListener('mousedown', e=>{
+  const h=e.target.closest && e.target.closest('.th-resizer'); if(!h) return;
+  const th=h.parentElement; e.preventDefault();
+  skuResize={k:h.dataset.k, startX:e.clientX, startW:th.getBoundingClientRect().width};
+  h.classList.add('active');
+});
+document.addEventListener('mousemove', e=>{
+  if(!skuResize) return;
+  const w=Math.max(60, Math.round(skuResize.startW + (e.clientX-skuResize.startX)));
+  state.colWidths[skuResize.k]=w;
+  const cg=document.querySelector('#sku-table colgroup');
+  const idx=SKU_COLS.findIndex(c=>c.k===skuResize.k);
+  const col=cg&&idx>=0?cg.children[idx]:null;
+  if(col) col.style.width=w+'px';
+});
+document.addEventListener('mouseup', ()=>{
+  if(skuResize){ skuResize=null; document.querySelectorAll('.th-resizer').forEach(x=>x.classList.remove('active')); }
+});
 function exportSkuCsv(skus){
   const sorted=[...skus].sort((x,y)=>{
     let a=x[state.sortKey],b=y[state.sortKey];

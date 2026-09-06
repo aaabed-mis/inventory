@@ -132,6 +132,9 @@ table{border-collapse:collapse;width:100%;font-size:12.5px}
 thead th{position:sticky;top:0;background:var(--panel-2);color:var(--muted);text-align:left;
   padding:10px 12px;font-weight:600;white-space:nowrap;border-bottom:1px solid var(--line);cursor:pointer}
 thead th:hover{color:var(--text)}
+.th-resizer{position:absolute;right:0;top:0;bottom:0;width:6px;cursor:col-resize;z-index:6;user-select:none;opacity:0}
+thead th:hover .th-resizer,.th-resizer.active{opacity:1}
+.th-resizer:hover,.th-resizer.active{background:var(--accent)}
 tbody td{padding:9px 12px;border-bottom:1px solid rgba(42,54,71,.5);white-space:nowrap}
 tbody tr:hover{background:rgba(79,140,255,.06)}
 td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
