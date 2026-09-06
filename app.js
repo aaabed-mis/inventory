@@ -22,7 +22,7 @@ const PALETTE = ['#4f8cff','#22c1a4','#f5a623','#ff5d6c','#a78bfa','#33c08a','#f
 
 let DATA = null;   // window.__INVENTORY__
 const state = {
-  vkorg:'', werks:new Set(), extwg:'', matkl:'', window:90, status:'', risk:'', replen:'', search:'',
+  vkorg:'', werks:new Set(), extwg:'', matkl:'', maabc:'', window:90, status:'', risk:'', replen:'', search:'',
   sortKey:'value', sortDir:-1, page:1, pageSize:50,
   poSortKey:'del_date', poSortDir:1, poPage:1, poPageSize:50, topN:50,
   itSortKey:'po', itSortDir:1, itPage:1, itPageSize:50
@@ -78,6 +78,7 @@ function computeSkus(){
     const mat=DATA.mats[m]||{};
     if(state.extwg && (mat.extwg||'')!==state.extwg) continue;
     if(state.matkl && (mat.matkl||'')!==state.matkl) continue;
+    if(state.maabc && (mat.maabc||'')!==state.maabc) continue;
     if(q && !(m+' '+(mat.maktx||'')).toLowerCase().includes(q)) continue;
     let o=inv.get(m);
     if(!o){ o={qty:0,value:0,huom:0,plants:new Set()}; inv.set(m,o); }
@@ -94,6 +95,7 @@ function computeSkus(){
       const mat=DATA.mats[r[0]]||{};
       if(state.extwg && (mat.extwg||'')!==state.extwg) continue;
       if(state.matkl && (mat.matkl||'')!==state.matkl) continue;
+      if(state.maabc && (mat.maabc||'')!==state.maabc) continue;
       if(q && !(r[0]+' '+(mat.maktx||'')).toLowerCase().includes(q)) continue;
       let o=byOffice.get(r[0]);
       if(!o){ o={q30:0,v30:0,q90:0,v90:0,q365:0,v365:0,lastSale:r[8]}; byOffice.set(r[0],o); }
@@ -110,6 +112,7 @@ function computeSkus(){
       const mat=DATA.mats[m]||{};
       if(state.extwg && (mat.extwg||'')!==state.extwg) continue;
       if(state.matkl && (mat.matkl||'')!==state.matkl) continue;
+      if(state.maabc && (mat.maabc||'')!==state.maabc) continue;
       if(q && !(m+' '+(mat.maktx||'')).toLowerCase().includes(q)) continue;
       demand.set(m,{qW:state.window===30?s.q30:state.window===60?s.q60:state.window===90?s.q90:s.q365,
                     vW:state.window===30?s.v30:state.window===60?s.v60:state.window===90?s.v90:s.v365,
@@ -123,6 +126,7 @@ function computeSkus(){
     const mat=DATA.mats[i.matnr]||{};
     if(state.extwg && (mat.extwg||'')!==state.extwg) continue;
     if(state.matkl && (mat.matkl||'')!==state.matkl) continue;
+    if(state.maabc && (mat.maabc||'')!==state.maabc) continue;
     if(q && !(i.matnr+' '+(mat.maktx||'')).toLowerCase().includes(q)) continue;
     const future = i.del_date && i.del_date >= AS_OF;
     let o=inc.get(i.matnr);
@@ -225,7 +229,7 @@ function computeSkus(){
     if(state.replen && replen!==state.replen) continue;
     skus.push({matnr:m, maktx:mat.maktx||'', extwg:mat.extwg||'', ewbez:mat.ewbez||'',
       matkl:mat.matkl||'', wgbez:mat.wgbez||'', mfrnr:mat.mfrnr||'', name11:mat.name11||'',
-      qty, value, huom, plantCount:iv?iv.plants.size:0, plantsArr:iv?[...iv.plants]:[],
+      qty, value, huom, maabc:mat.maabc||'', plantCount:iv?iv.plants.size:0, plantsArr:iv?[...iv.plants]:[],
       qW, vW, q365, v365, dailyDemand, coverage, coverageMo, fcQty,
       leadTime, safetyStock, target, excessQty, excessValue, reorder, umrez,
       expiredVal:agm.expiredVal, expiredBatches:agm.expiredBatches,
@@ -291,6 +295,7 @@ function byPlantInventory(){
     const mat=DATA.mats[r[0]]||{};
     if(state.extwg && (mat.extwg||'')!==state.extwg) continue;
     if(state.matkl && (mat.matkl||'')!==state.matkl) continue;
+    if(state.maabc && (mat.maabc||'')!==state.maabc) continue;
     if(q && !(r[0]+' '+(mat.maktx||'')).toLowerCase().includes(q)) continue;
     const key=r[1]+(DATA.plants[r[1]]?.name1?' – '+DATA.plants[r[1]].name1:'');
     const o=by[key]||(by[key]={value:0,qty:0});
@@ -382,6 +387,7 @@ function renderIncoming(by){
 const SKU_COLS=[
   {k:'matnr',t:'SKU',cls:''},
   {k:'maktx',t:'Description',cls:''},
+  {k:'maabc',t:'ABC',cls:''},
   {k:'plantCount',t:'Plants',cls:'num'},
   {k:'qty',t:'Qty',cls:'num'},
   {k:'value',t:'Value',cls:'num'},
@@ -400,8 +406,8 @@ const SKU_COLS=[
   {k:'reorder',t:'Reorder',cls:''},
   {k:'lastSale',t:'Last Sale',cls:''},
 ];
-const SKU_HEAD=['SKU','Description','Plants','Qty','Value','Sales Qty','Daily Sales','Coverage (mo)','Lead Time','Safety Stock','Ideal Stock','Sales Forecast','Excess Qty','Excess Value','Incoming Qty','Stock Status','Risk','Reorder','Last Sale'];
-const SKU_CSV_KEYS=['matnr','maktx','plantCount','qty','value','qW','dailyDemand','coverageMo','leadTime','safetyStock','target','fcQty','excessQty','excessValue','incQty','status','risk','reorder','lastSale'];
+const SKU_HEAD=['SKU','Description','ABC','Plants','Qty','Value','Sales Qty','Daily Sales','Coverage (mo)','Lead Time','Safety Stock','Ideal Stock','Sales Forecast','Excess Qty','Excess Value','Incoming Qty','Stock Status','Risk','Reorder','Last Sale'];
+const SKU_CSV_KEYS=['matnr','maktx','maabc','plantCount','qty','value','qW','dailyDemand','coverageMo','leadTime','safetyStock','target','fcQty','excessQty','excessValue','incQty','status','risk','reorder','lastSale'];
 function drawSkuTable(skus){
   const cols=SKU_COLS;
   document.querySelector('#sku-table thead').innerHTML=
@@ -478,6 +484,7 @@ function filteredPoRows(){
     const mat=DATA.mats[i.matnr]||{};
     if(state.extwg && (mat.extwg||'')!==state.extwg) continue;
     if(state.matkl && (mat.matkl||'')!==state.matkl) continue;
+    if(state.maabc && (mat.maabc||'')!==state.maabc) continue;
     if(q && !(i.matnr+' '+(mat.maktx||'')).toLowerCase().includes(q)) continue;
     const future = i.del_date && i.del_date>=AS_OF;
     rows.push({...i, maktx:mat.maktx||'', status: future?'Incoming':'Overdue',
@@ -628,6 +635,7 @@ function initUI(){
   }
   fillSelect('f-extwg',[...eg.entries()].sort((a,b)=>a[1].localeCompare(b[1])).map(e=>[e[0],e[0]+' – '+e[1]]),'All');
   fillSelect('f-matkl',[...mk.entries()].sort((a,b)=>a[1].localeCompare(b[1])).map(e=>[e[0],e[0]+' – '+e[1]]),'All');
+  fillSelect('f-maabc',['A','B','C'].map(v=>[v,v]),'All');
   fillSelect('f-status',STATUS_ORDER.map(s=>[s,s]),'All');
   fillSelect('f-risk',RISK_ORDER.map(s=>[s,s]),'All');
   // plant multi-select
@@ -639,6 +647,7 @@ function initUI(){
   document.getElementById('f-vkorg').onchange=e=>{state.vkorg=e.target.value; resetPages(); refresh();};
   document.getElementById('f-extwg').onchange=e=>{state.extwg=e.target.value; resetPages(); refresh();};
   document.getElementById('f-matkl').onchange=e=>{state.matkl=e.target.value; resetPages(); refresh();};
+  document.getElementById('f-maabc').onchange=e=>{state.maabc=e.target.value; resetPages(); refresh();};
   document.getElementById('f-window').onchange=e=>{state.window=parseInt(e.target.value,10); resetPages(); refresh();};
   document.getElementById('f-status').onchange=e=>{state.status=e.target.value; resetPages(); refresh();};
   document.getElementById('f-risk').onchange=e=>{state.risk=e.target.value; resetPages(); refresh();};
@@ -648,7 +657,7 @@ function initUI(){
     state.vkorg=''; state.werks.clear(); state.extwg=''; state.matkl=''; state.window=90;
     state.status=''; state.risk=''; state.replen=''; state.search='';
     document.getElementById('f-vkorg').value=''; document.getElementById('f-extwg').value='';
-    document.getElementById('f-matkl').value=''; document.getElementById('f-window').value='90';
+    document.getElementById('f-matkl').value=''; document.getElementById('f-maabc').value=''; document.getElementById('f-window').value='90';
     document.getElementById('f-status').value=''; document.getElementById('f-risk').value='';
     document.getElementById('f-replen').value=''; document.getElementById('f-search').value='';
     document.querySelectorAll('.ms[data-key="werks"] input[type="checkbox"]').forEach(c=>c.checked=false);

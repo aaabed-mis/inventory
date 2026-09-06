@@ -138,6 +138,7 @@ for matnr, maktx, matkl, wgbez, extwg, ewbez, mfrnr, name11 in drows:
     mats[strip_matnr(matnr)] = {
         "maktx": maktx or "", "matkl": matkl or "", "wgbez": wgbez or "",
         "extwg": extwg or "", "ewbez": ewbez or "", "mfrnr": mfrnr or "", "name11": name11 or "",
+        "ma_price": 0, "lead_time": 0, "safety_stock": 0, "maabc": "",
     }
 con.close()
 print("  inventory combos:", len(inv_idx), "| materials:", len(mats), "| plants:", len(plants))
@@ -157,17 +158,18 @@ for matnr, maktx, extwg, ewbez, matkl, wgbez, mfrnr, name11 in srows:
     m = strip_matnr(matnr)
     if m not in mats:
         mats[m] = {"maktx": maktx or "", "matkl": matkl or "", "wgbez": wgbez or "",
-                   "extwg": extwg or "", "ewbez": ewbez or "", "mfrnr": mfrnr or "", "name11": name11 or ""}
+                   "extwg": extwg or "", "ewbez": ewbez or "", "mfrnr": mfrnr or "", "name11": name11 or "",
+                   "ma_price": 0, "lead_time": 0, "safety_stock": 0, "maabc": ""}
 
 # material dims fallback 2: dim_material_master (catches incoming-only materials) + lead_time/safety_stock enrichment
 try:
     mm = duckdb.connect(os.path.join(DUCK, "dim_material_master.duckdb"), read_only=True)
     ltss = {}   # matnr -> [lead_time, safety_stock]
-    for matnr, maktx, matkl, wgbez, extwg, ewbez, mfrnr, lead_time, safety_stock in mm.execute(
-        "SELECT matnr, maktx, matkl, wgbez, extwg, ewbez, mfrnr, lead_time, safety_stock FROM sap_prd.dim_material_master"
+    for matnr, maktx, matkl, wgbez, extwg, ewbez, mfrnr, lead_time, safety_stock, maabc in mm.execute(
+        "SELECT matnr, maktx, matkl, wgbez, extwg, ewbez, mfrnr, lead_time, safety_stock, maabc FROM sap_prd.dim_material_master"
     ).fetchall():
         m = strip_matnr(matnr)
-        ltss[m] = [float(lead_time or 0), float(safety_stock or 0)]
+        ltss[m] = [float(lead_time or 0), float(safety_stock or 0), (maabc or "").strip()]
         if m not in mats:
             mats[m] = {"maktx": maktx or "", "matkl": matkl or "", "wgbez": wgbez or "",
                        "extwg": extwg or "", "ewbez": ewbez or "", "mfrnr": mfrnr or "", "name11": ""}
@@ -177,11 +179,12 @@ except Exception as e:
     print("  WARN dim_material_master:", e)
     ltss = {}
 
-# enrich every material dim with lead_time / safety_stock from dim_material_master
+# enrich every material dim with lead_time / safety_stock / maabc (ABC indicator) from dim_material_master
 for m, dim in mats.items():
     v = ltss.get(m)
     dim["lead_time"] = v[0] if v else 0
     dim["safety_stock"] = v[1] if v else 0
+    dim["maabc"] = v[2] if v else ""
 
 # UMREZ (pieces per carton) per material from fact_inventory (umrez is a fact_inventory column;
 # fact_mard previously used is redundant — fact_inventory covers the same materials, 0 conflicts).
