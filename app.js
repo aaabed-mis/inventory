@@ -607,6 +607,10 @@ function fitScale(){
   const wrap=document.getElementById('scale-wrap');
   if(!wrap) return;
   const designW=1600;              // layout designed at this width; scale below it
+  if(window.innerWidth<=820){      // phones/tablets: CSS media query takes over (fluid reflow)
+    wrap.style.transform='none'; wrap.style.height='';
+    return;
+  }
   const s=Math.min(1, window.innerWidth/designW);
   wrap.style.transform = s<1 ? 'scale('+s+')' : 'none';
   if(s<1){
