@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Inventory Dashboard</title>
   <link rel="icon" type="image/x-icon" href="assets/favicon.ico" />
-  <link rel="stylesheet" href="styles.css?v=20260906z" />
+  <link rel="stylesheet" href="styles.css?v=20260907a" />
 </head>
 <body>
   <div id="scale-wrap">
@@ -100,6 +100,33 @@
     </div>
   </section>
 
+  <!-- Methodology & disclaimer (collapsible) -->
+  <section class="card table-card">
+    <details>
+      <summary class="card-head method-summary"><h2>How these figures are derived &amp; disclaimer</h2><span class="hint">tap to expand</span></summary>
+      <div class="method-body">
+        <h3>How these figures are derived</h3>
+        <ul>
+          <li><b>Total Inventory Value</b> = Σ (on-hand qty × unit price) across all plants <b>+ in-transit STO value</b>.</li>
+          <li><b>Unit price</b> (<code>ma_price</code>) = the material's moving-average / valuation price (latest available per material).</li>
+          <li><b>Daily Sales</b> = sales qty over the selected demand window ÷ window days (default: last 90 days).</li>
+          <li><b>Coverage (mo)</b> = current stock ÷ daily sales, in months (days ÷ 30.44).</li>
+          <li><b>Ideal Stock</b> = safety stock + (daily sales × lead time).</li>
+          <li><b>Excess Qty / Value</b> = stock above Ideal Stock (when positive).</li>
+          <li><b>Incoming Qty</b> = all open purchase-order quantities × Factor (converted to pieces); <b>Incoming PO Value</b> = Σ PO net value.</li>
+          <li><b>Sales Forecast</b> = planned forecast quantity × Factor (pieces).</li>
+          <li><b>Factor (umrez)</b> = pieces per carton.</li>
+          <li><b>In-Transit</b> = stock transport orders between plants; value = qty × unit price (no source value column).</li>
+          <li><b>Expired / Near-Expiry</b> values come from batch-level aging of on-hand stock (by production / expiry date).</li>
+        </ul>
+        <p class="method-note">Data refreshes daily from the SAP PRD extract; sales figures update monthly.</p>
+        <div class="disclaimer">
+          <b>⚠️ Disclaimer</b> — The figures on this dashboard are <b>derived estimates intended as a management baseline / reference only</b>, for monitoring trends and decision support. They are <b>not</b> audited or exact accounting values. Ratios depend on inputs such as the demand window, lead time, safety stock and unit price. <b>Always validate against SAP before making operational or financial decisions.</b>
+        </div>
+      </div>
+    </details>
+  </section>
+
   <!-- SKU analysis table -->
   <section class="card table-card">
     <div class="card-head">
@@ -178,7 +205,7 @@
   <div class="loading" id="loading"><div><div class="spin"></div>Loading inventory data…</div></div>
 
   <script src="assets/chart.umd.min.js"></script>
-  <script src="data/data.js?v=20260906z"></script>
-  <script src="app.js?v=20260906z"></script>
+  <script src="data/data.js?v=20260907a"></script>
+  <script src="app.js?v=20260907a"></script>
 </body>
 </html>
