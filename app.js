@@ -388,6 +388,7 @@ const SKU_COLS=[
   {k:'matnr',t:'SKU',cls:''},
   {k:'maktx',t:'Description',cls:''},
   {k:'maabc',t:'ABC',cls:''},
+  {k:'umrez',t:'Factor',cls:'num'},
   {k:'plantCount',t:'Plants',cls:'num'},
   {k:'qty',t:'Qty',cls:'num'},
   {k:'value',t:'Value',cls:'num'},
@@ -406,8 +407,8 @@ const SKU_COLS=[
   {k:'reorder',t:'Reorder',cls:''},
   {k:'lastSale',t:'Last Sale',cls:''},
 ];
-const SKU_HEAD=['SKU','Description','ABC','Plants','Qty','Value','Sales Qty','Daily Sales','Coverage (mo)','Lead Time','Safety Stock','Ideal Stock','Sales Forecast','Excess Qty','Excess Value','Incoming Qty','Stock Status','Risk','Reorder','Last Sale'];
-const SKU_CSV_KEYS=['matnr','maktx','maabc','plantCount','qty','value','qW','dailyDemand','coverageMo','leadTime','safetyStock','target','fcQty','excessQty','excessValue','incQty','status','risk','reorder','lastSale'];
+const SKU_HEAD=['SKU','Description','ABC','Factor','Plants','Qty','Value','Sales Qty','Daily Sales','Coverage (mo)','Lead Time','Safety Stock','Ideal Stock','Sales Forecast','Excess Qty','Excess Value','Incoming Qty','Stock Status','Risk','Reorder','Last Sale'];
+const SKU_CSV_KEYS=['matnr','maktx','maabc','umrez','plantCount','qty','value','qW','dailyDemand','coverageMo','leadTime','safetyStock','target','fcQty','excessQty','excessValue','incQty','status','risk','reorder','lastSale'];
 function drawSkuTable(skus){
   const cols=SKU_COLS;
   document.querySelector('#sku-table thead').innerHTML=
@@ -437,6 +438,7 @@ function drawSkuTable(skus){
       if(c.k==='target') return `<td class="num">${v>0?fmtNum(v,0):'—'}</td>`;
       if(c.k==='excessQty') return `<td class="num" style="color:${v>0?'var(--warn)':'inherit'}">${v>0?fmtNum(v,0):'—'}</td>`;
       if(c.k==='excessValue') return `<td class="num" style="color:${v>0?'var(--warn)':'inherit'}">${v>0?fmtMoney(v):'—'}</td>`;
+      if(c.k==='umrez') return `<td class="num">${fmtNum(v,1)}</td>`;
       if(c.k==='qty'||c.k==='huom'||c.k==='fcQty'||c.k==='qW'||c.k==='incQty') return `<td class="num">${fmtInt(v)}</td>`;
       if(c.k==='dailyDemand') return `<td class="num">${fmtNum(r.dailyDemand,1)}</td>`;
       if(c.k==='value'||c.k==='vW'||c.k==='incValue') return `<td class="num">${fmtMoney(v)}</td>`;
