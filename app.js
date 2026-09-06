@@ -315,14 +315,14 @@ function incomingByMonth(){
 /* ---------- KPIs ---------- */
 function renderKPIs(a){
   const cards=[
-    {cls:'k-value',label:'Total Inventory Value',value:fmtMoney(a.invValue),sub:fmtInt(a.invQty)+' units · '+fmtInt(a.skuCount)+' SKUs'},
+    {cls:'k-value',label:'Total Inventory Value',value:fmtMoney(a.invValue+a.intransitValue),sub:fmtInt(a.invQty)+' units · '+fmtInt(a.skuCount)+' SKUs · incl. intransit'},
     {cls:'k-risk',label:'Expired Value',value:fmtMoney(a.expiredValue),sub:fmtNum(a.invValue?(a.expiredValue/a.invValue*100):0,1)+'% of stock · '+fmtInt(a.expiredBatches)+' batches'},
     {cls:'k-warn',label:'Near Expiry Value (0-120 days)',value:fmtMoney(a.nearExpiryValue),sub:fmtInt(a.nearExpiryQty)+' units · '+fmtInt(a.nearExpiryBatches)+' batches'},
     {cls:'k-value',label:'Incoming PO Value',value:fmtMoney(a.incValue),sub:fmtInt(a.incQty)+' units · '+fmtInt(a.posCount)+' PO lines'},
     {cls:'k-risk',label:'Out-of-Stock SKUs',value:fmtInt(a.outOfStock),sub:fmtInt(a.outWithDemand)+' with recent demand'},
     {cls:'k-warn',label:'Critical / High Risk',value:fmtInt(a.criticalCount)+' / '+fmtInt(a.highCount),sub:'SKUs needing attention'},
     {cls:'k-warn',label:'Potential Excess Value',value:fmtMoney(a.excessValue),sub:fmtInt(a.excessCount)+' SKUs > '+EXCESS_COV+'d coverage'},
-    {cls:'k-good',label:'Intransit Value',value:fmtMoney(a.intransitValue),sub:fmtInt(a.intransitQty)+' units · '+fmtInt(a.intransitLines)+' lines'}, 
+    {cls:'k-good',label:'Intransit STO',value:fmtMoney(a.intransitValue),sub:fmtInt(a.intransitQty)+' units · '+fmtInt(a.intransitLines)+' lines'}, 
   ];
   document.getElementById('kpis').innerHTML=cards.map(c=>`
     <div class="kpi ${c.cls}">
@@ -352,7 +352,7 @@ function renderExtwg(a){
       backgroundColor:entries.map((_,i)=>`hsl(${210-i*13} 70% 58%)`),borderRadius:6}]},
     options:{indexAxis:'y',maintainAspectRatio:false,
       plugins:{legend:{display:false},
-        tooltip:{callbacks:{title:items=>items[0].label,label:c=>['Value: '+fmtMoney(c.raw),'Qty: '+fmtInt(entries[c.dataIndex][1].qty)+' · '+fmtInt(entries[c.dataIndex][1].count)+' SKUs']}}},
+        tooltip:{callbacks:{title:items=>items[0].label,label:c=>fmtMoneyM(c.raw)}}},
       scales:{x:{ticks:{callback:v=>fmtMoneyM(v)}}}}});}
 function renderRisk(a){
   const labels=RISK_ORDER.filter(s=>a.byRisk[s].count>0);
