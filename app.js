@@ -545,7 +545,8 @@ const IT_COLS=[
 ];
 const IT_HEAD=['PO','Item','Material','Description','From Plant','To Plant','Qty','UoM','Value','PO Date'];
 const IT_CSV_KEYS=['po','item','matnr','maktx','fromName','toName','qty','uom','value','po_date'];
-function plantName(p){ const pl=DATA.plants||{}; return (pl[p]&&pl[p].name1)||p||''; }
+function plantName(p){ const pl=DATA.plants||{}; return (pl[p]&&pl[p].name1)||''; }
+function plantLabel(p){ const n=plantName(p); return p ? (n ? p+' – '+n : p) : '—'; }
 function itValue(r){ const mp=(DATA.mats[r.matnr]&&DATA.mats[r.matnr].ma_price)||0; return r.qty*mp; }
 function intransitRows(){
   const q=state.search.trim().toLowerCase();
@@ -553,7 +554,7 @@ function intransitRows(){
   for(const r of DATA.intransit||[]){
     const mat=DATA.mats[r.matnr]||{};
     if(q && !(r.matnr+' '+(mat.maktx||'')).toLowerCase().includes(q)) continue;
-    rows.push({...r, maktx:mat.maktx||'', fromName:plantName(r.from), toName:plantName(r.to), value:itValue(r)});
+    rows.push({...r, maktx:mat.maktx||'', fromName:plantLabel(r.from), toName:plantLabel(r.to), value:itValue(r)});
   }
   return rows;
 }
@@ -577,7 +578,7 @@ function drawItTable(rows){
       let v=r[c.k];
       if(c.k==='matnr') return `<td>${esc(strip0(v))}</td>`;
       if(c.k==='qty') return `<td class="num">${fmtInt(v)}</td>`;
-      if(c.k==='value') return `<td class="num">${fmtMoney(v)}</td>`;
+      if(c.k==='value') return `<td class="num">${fmtInt(v)}</td>`;
       if(c.k==='po_date') return `<td>${v?esc(v.slice(0,10)):'—'}</td>`;
       return `<td>${esc(v==null?'':v)}</td>`;
     }).join('')+'</tr>').join('');
