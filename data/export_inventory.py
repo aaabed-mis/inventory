@@ -183,20 +183,22 @@ for m, dim in mats.items():
     dim["lead_time"] = v[0] if v else 0
     dim["safety_stock"] = v[1] if v else 0
 
-# UMREZ (pieces per carton) per material from fact_mard. REVERTED 2026-09-06: all calculations back to
-# PIECES — demand windows stay in base units (qty_in_sku), no column divided by UMREZ. umrez still emitted
-# in the payload for reference. Single UMREZ per material; default 1 when missing.
+# UMREZ (pieces per carton) per material from fact_inventory (umrez is a fact_inventory column;
+# fact_mard previously used is redundant — fact_inventory covers the same materials, 0 conflicts).
+# REVERTED 2026-09-06: all calculations back to PIECES — demand windows stay in base units
+# (qty_in_sku), no column divided by UMREZ. umrez still emitted in the payload for reference
+# (Forecast column multiplies zbqty by it). Single UMREZ per material; default 1 when missing.
 try:
-    mard = duckdb.connect(os.path.join(DUCK, "fact_mard.duckdb"), read_only=True)
+    mard = duckdb.connect(INV, read_only=True)
     umrez_map = {}
     for matnr, umrez in mard.execute(
-        "SELECT matnr, MAX(umrez) FROM sap_prd.fact_mard WHERE umrez IS NOT NULL AND umrez > 0 GROUP BY 1"
+        "SELECT matnr, MAX(umrez) FROM sap_prd.fact_inventory WHERE umrez IS NOT NULL AND umrez > 0 GROUP BY 1"
     ).fetchall():
         umrez_map[strip_matnr(matnr)] = float(umrez or 1.0)
     mard.close()
     print("  umrez map loaded:", len(umrez_map), "materials")
 except Exception as e:
-    print("  WARN fact_mard umrez:", e)
+    print("  WARN fact_inventory umrez:", e)
     umrez_map = {}
 for m, dim in mats.items():
     dim["umrez"] = umrez_map.get(m, 1.0)
