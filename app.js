@@ -172,7 +172,8 @@ function computeSkus(){
     // ---- lead time / safety stock aware (from dim_material_master) ----
     const leadTime=mat.lead_time||0, safetyStockPcs=mat.safety_stock||0;
     const safetyStock = safetyStockPcs;          // Safety Stock in pieces
-    const coverage=dailyDemand>0?qty/dailyDemand:null;
+    const coverage=dailyDemand>0?qty/dailyDemand:null;   // days (internal: status/risk use days)
+    const coverageMo = coverage!=null ? coverage/30.44 : null;   // months for display
     const target = safetyStockPcs + dailyDemand*leadTime;   // target stays in base units (pieces)
     const excessQty = target>0 ? Math.max(0, qty-target) : 0;
     const unitPrice = qty>0 ? value/qty : 0;                 // weighted avg price for excess-value calc
@@ -224,7 +225,7 @@ function computeSkus(){
     skus.push({matnr:m, maktx:mat.maktx||'', extwg:mat.extwg||'', ewbez:mat.ewbez||'',
       matkl:mat.matkl||'', wgbez:mat.wgbez||'', mfrnr:mat.mfrnr||'', name11:mat.name11||'',
       qty, value, huom, plantCount:iv?iv.plants.size:0, plantsArr:iv?[...iv.plants]:[],
-      qW, vW, q365, v365, dailyDemand, coverage, fcQty,
+      qW, vW, q365, v365, dailyDemand, coverage, coverageMo, fcQty,
       leadTime, safetyStock, target, excessQty, excessValue, reorder, umrez,
       expiredVal:agm.expiredVal, expiredBatches:agm.expiredBatches,
       nearVal:agm.nearVal, nearQty:agm.nearQty, nearBatches:agm.nearBatches,
@@ -378,27 +379,26 @@ function renderIncoming(by){
 const SKU_COLS=[
   {k:'matnr',t:'SKU',cls:''},
   {k:'maktx',t:'Description',cls:''},
-  {k:'ewbez',t:'Ext Group',cls:''},
   {k:'plantCount',t:'Plants',cls:'num'},
   {k:'qty',t:'Qty',cls:'num'},
   {k:'value',t:'Value',cls:'num'},
   {k:'qW',t:'Sales Qty',cls:'num'},
   {k:'dailyDemand',t:'Daily Sales',cls:'num'},
-  {k:'coverage',t:'Coverage (d)',cls:'num'},
+  {k:'coverageMo',t:'Coverage (mo)',cls:'num'},
   {k:'leadTime',t:'Lead Time',cls:'num'},
   {k:'safetyStock',t:'Safety Stock',cls:'num'},
-  {k:'target',t:'Target',cls:'num'},
+  {k:'target',t:'Ideal Stock',cls:'num'},
+  {k:'fcQty',t:'Sales Forecast',cls:'num'},
   {k:'excessQty',t:'Excess Qty',cls:'num'},
   {k:'excessValue',t:'Excess Value',cls:'num'},
-  {k:'fcQty',t:'Forecast',cls:'num'},
   {k:'incQty',t:'Incoming Qty',cls:'num'},
   {k:'status',t:'Stock Status',cls:''},
   {k:'risk',t:'Risk',cls:''},
   {k:'reorder',t:'Reorder',cls:''},
   {k:'lastSale',t:'Last Sale',cls:''},
 ];
-const SKU_HEAD=['SKU','Description','Ext Group','Plants','Qty','Value','Sales Qty','Daily Sales','Coverage (d)','Lead Time','Safety Stock','Target','Excess Qty','Excess Value','Forecast','Incoming Qty','Stock Status','Risk','Reorder','Last Sale'];
-const SKU_CSV_KEYS=['matnr','maktx','ewbez','plantCount','qty','value','qW','dailyDemand','coverage','leadTime','safetyStock','target','excessQty','excessValue','fcQty','incQty','status','risk','reorder','lastSale'];
+const SKU_HEAD=['SKU','Description','Plants','Qty','Value','Sales Qty','Daily Sales','Coverage (mo)','Lead Time','Safety Stock','Ideal Stock','Sales Forecast','Excess Qty','Excess Value','Incoming Qty','Stock Status','Risk','Reorder','Last Sale'];
+const SKU_CSV_KEYS=['matnr','maktx','plantCount','qty','value','qW','dailyDemand','coverageMo','leadTime','safetyStock','target','fcQty','excessQty','excessValue','incQty','status','risk','reorder','lastSale'];
 function drawSkuTable(skus){
   const cols=SKU_COLS;
   document.querySelector('#sku-table thead').innerHTML=
@@ -422,7 +422,7 @@ function drawSkuTable(skus){
       if(c.k==='risk') return `<td><span class="tag ${RISK_CLASS[v]||'t-None'}">${esc(v)}</span></td>`;
       if(c.k==='reorder') return `<td><span class="tag ${v==='Reorder'?'t-Overdue':v==='OK'?'t-Incoming':'t-None'}">${v||'—'}</span></td>`;
       if(c.k==='lastSale') return `<td>${v?esc(v.slice(0,10)):'—'}</td>`;
-      if(c.k==='coverage') return `<td class="num">${v==null?'—':fmtNum(v,0)}</td>`;
+      if(c.k==='coverageMo') return `<td class="num">${v==null?'—':fmtNum(v,1)}</td>`;
       if(c.k==='leadTime') return `<td class="num">${fmtNum(v,1)}</td>`;
       if(c.k==='safetyStock') return `<td class="num">${fmtNum(v,0)}</td>`;
       if(c.k==='target') return `<td class="num">${v>0?fmtNum(v,0):'—'}</td>`;
