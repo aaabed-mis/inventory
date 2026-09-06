@@ -155,21 +155,6 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .t-Incoming{background:rgba(34,193,164,.16);color:#5fe0c5}
 .t-Overdue{background:rgba(255,93,108,.2);color:#ff9aa5}
 
-/* Insights */
-.insights{padding:2px 0}
-.insight{display:flex;gap:12px;padding:10px 12px;border-radius:10px;margin-bottom:8px;
-  background:var(--panel-2);border:1px solid var(--line);font-size:13px;line-height:1.5}
-.insight .ic{flex:none;width:30px;height:30px;border-radius:8px;display:grid;place-items:center;font-size:15px}
-.insight.ic-red .ic{background:rgba(255,93,108,.16)}
-.insight.ic-amber .ic{background:rgba(245,166,35,.16)}
-.insight.ic-blue .ic{background:rgba(79,140,255,.16)}
-.insight.ic-green .ic{background:rgba(51,192,138,.16)}
-.insight b{color:var(--text)}
-.insight .i-meta{color:var(--muted);font-size:11.5px;margin-top:2px}
-.insights.notes{font-size:12.5px;color:var(--muted)}
-.insights.notes p{margin:0 0 8px}
-.insights.notes b{color:var(--text)}
-
 /* External tooltip */
 .region-tip{position:absolute;pointer-events:none;z-index:50;background:var(--panel-2);
   border:1px solid var(--line);border-radius:10px;padding:10px 12px;box-shadow:var(--shadow);

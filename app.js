@@ -3,7 +3,7 @@
    Grain: inventory aggregated to SKU x plant; demand pre-aggregated windows. */
 'use strict';
 
-/* ---------- config / thresholds (documented in methodology card) ---------- */
+/* ---------- config / thresholds ---------- */
 const LOW_COV = 30;      // coverage days below which stock is Critical (high demand)
 const OK_COV = 60;       // coverage days for Low Stock boundary
 const EXCESS_COV = 180;  // coverage days above which stock is Excess
@@ -533,75 +533,6 @@ function downloadCsv(name,text){
   setTimeout(()=>URL.revokeObjectURL(a.href),500);
 }
 
-/* ---------- insights ---------- */
-function buildInsights(skus,a){
-  const ins=[];
-  const total=a.invValue;
-  // concentration
-  const top20=[...skus].sort((x,y)=>y.value-x.value).slice(0,20);
-  const top20v=top20.reduce((s,x)=>s+x.value,0);
-  if(total>0) ins.push({rank:90,cls:'ic-blue',icon:'📊',html:`<b>${fmtNum(top20v/total*100,1)}%</b> of total inventory value (${fmtMoney(top20v)}) is concentrated in the top 20 SKUs.`,meta:'Pareto concentration'});
-  // warehouse with highest value
-  const byP=byPlantInventory();
-  const topP=Object.entries(byP).sort((x,y)=>y[1].value-x[1].value)[0];
-  if(topP) ins.push({rank:80,cls:'ic-blue',icon:'🏬',html:`<b>${esc(topP[0])}</b> holds the highest inventory value: ${fmtMoney(topP[1].value)} (${fmtNum(topP[1].value/total*100,1)}% of total).`,meta:'Warehouse concentration'});
-  // out of stock with demand
-  const oos=skus.filter(s=>s.status==='Out of Stock'&&s.qW>0);
-  if(oos.length) ins.push({rank:95,cls:'ic-red',icon:'⛔',html:`<b>${fmtInt(oos.length)} SKUs</b> are out of stock but have recent sales activity (${fmtMoney(oos.reduce((s,x)=>s+x.vW,0))} of ${state.window}d sales).`,meta:'Stock-out risk'});
-  // critical / high risk
-  const cr=skus.filter(s=>s.risk==='Critical'), hi=skus.filter(s=>s.risk==='High');
-  if(cr.length||hi.length) ins.push({rank:93,cls:'ic-red',icon:'⚠️',html:`<b>${fmtInt(cr.length)} SKUs critical</b> (${fmtInt(hi.length)} high) on stock risk. Critical = stock-out / coverage < ${LOW_COV}d with demand and insufficient incoming supply.`,meta:'Risk exposure'});
-  // excess
-  if(a.excessValue>0) ins.push({rank:70,cls:'ic-amber',icon:'💤',html:`<b>${fmtMoney(a.excessValue)}</b> of inventory (${fmtInt(a.excessCount)} SKUs) exceeds ${EXCESS_COV} days of coverage — potential excess working capital.`,meta:'Excess inventory'});
-  // slow moving
-  if(a.slowValue>0) ins.push({rank:60,cls:'ic-amber',icon:'🐌',html:`<b>${fmtMoney(a.slowValue)}</b> of inventory (${fmtInt(a.slowCount)} SKUs) has <b>no sales in the last ${state.window} days</b>.`,meta:'Slow moving'});
-  // incoming
-  if(a.incQty>0) ins.push({rank:50,cls:'ic-green',icon:'🚚',html:`<b>${fmtInt(a.incQty)} units / ${fmtMoney(a.incValue)}</b> are on incoming POs (${fmtInt(a.posCount)} lines) for delivery from ${AS_OF}.`,meta:'Incoming supply'});
-  // reorder point
-  const ro=skus.filter(s=>s.reorder==='Reorder');
-  if(ro.length) ins.push({rank:84,cls:'ic-amber',icon:'📉',html:`<b>${fmtInt(ro.length)} SKUs</b> are at or below their reorder point (safety stock + lead-time demand) — review replenishment.`,meta:'Reorder point'});
-  // excess vs lead-time target
-  const ov=skus.filter(s=>s.status==='Excess'&&s.target>0&&s.qty>2*s.target);
-  const ovVal=ov.reduce((s,x)=>s+x.value,0), ovQty=ov.reduce((s,x)=>s+x.excessQty,0);
-  if(ov.length) ins.push({rank:78,cls:'ic-amber',icon:'📦',html:`<b>${fmtInt(ov.length)} SKUs</b> hold more than 2× their lead-time target (${fmtMoney(ovVal)}; ~${fmtInt(ovQty)} units above target) — excess working capital.`,meta:'Overstock vs lead-time target'});
-  // high demand insufficient incoming
-  const hd=skus.filter(s=>s.qW>0 && s.dailyDemand>0 && (s.coverage==null||s.coverage<LOW_COV) && s.incQty < s.dailyDemand*LOW_COV);
-  if(hd.length) ins.push({rank:92,cls:'ic-red',icon:'🔥',html:`<b>${fmtInt(hd.length)} high-demand SKUs</b> have less than ${LOW_COV} days of stock and insufficient incoming supply (< ${LOW_COV} days of demand on order).`,meta:'Replenishment gap'});
-  // zero stock recent sales
-  const zs=skus.filter(s=>s.qty<=0 && s.qW>0);
-  if(zs.length) ins.push({rank:88,cls:'ic-red',icon:'🕳️',html:`<b>${fmtInt(zs.length)} SKUs</b> have zero inventory but recent sales in the last ${state.window} days — review replenishment urgently.`,meta:'Zero stock with demand'});
-  // high inventory low sales
-  const hl=skus.filter(s=>s.status==='Excess'||s.status==='No Recent Sales').sort((x,y)=>y.value-x.value).slice(0,5);
-  if(hl.length) ins.push({rank:55,cls:'ic-amber',icon:'📦',html:`High inventory / low demand: <b>${esc(hl.map(s=>strip0(s.matnr)).join(', '))}</b> (${fmtMoney(hl.reduce((s,x)=>s+x.value,0))} combined).`,meta:'Excess candidates'});
-  // overdue
-  if(a.overdueValue>0) ins.push({rank:75,cls:'ic-amber',icon:'⏰',html:`<b>${fmtMoney(a.overdueValue)}</b> of PO lines have a delivery date before ${AS_OF} (${fmtInt(a.overdueQty)} units) — verify receipt or expedite.`,meta:'Overdue deliveries'});
-  // coverage portfolio
-  if(a.coverageDays!=null) ins.push({rank:40,cls:'ic-green',icon:'🛡️',html:`Portfolio coverage is <b>${fmtNum(a.coverageDays,0)} days</b> (total stock ÷ daily demand).`,meta:'Portfolio'});
-  // category exposure
-  const egTop=Object.entries(a.byExtwg).sort((x,y)=>y[1].value-x[1].value).slice(0,3);
-  if(egTop.length) ins.push({rank:35,cls:'ic-blue',icon:'🏷️',html:`Top value categories: <b>${esc(egTop.map(e=>e[0]+' ('+fmtNum(e[1].value/total*100,1)+'%)').join(' · '))}</b>.`,meta:'Category exposure'});
-  ins.sort((x,y)=>y.rank-x.rank);
-  return ins.slice(0,12);
-}
-function renderInsights(skus,a){
-  const ins=buildInsights(skus,a);
-  document.getElementById('insights').innerHTML = ins.length
-    ? ins.map(i=>`<div class="insight ${i.cls}"><div class="ic">${i.icon}</div><div><div>${i.html}</div><div class="i-meta">${esc(i.meta)}</div></div></div>`).join('')
-    : '<div class="insight ic-blue"><div class="ic">ℹ️</div><div>No insights for the current filter selection.</div></div>';
-}
-
-/* ---------- methodology ---------- */
-function renderMethodology(){
-  const m=DATA.meta;
-  const html=`
-  <p><b>Sources:</b> fact_inventory (inventory position) · fact_ztsd_detail (sales/demand) · fact_incoming (open purchase orders), extracted ${esc(m.generated_at)}. Sales data through ${esc(m.ref_date)}. ${fmtInt(m.inv_combos)} SKU×plant inventory combos, ${fmtInt(m.materials)} materials, ${fmtInt(m.incoming_lines)} open PO lines.</p>
-  <p><b>Stock value</b> = Σ(qty × ma_price) per SKU×plant. <b>Demand</b> uses net quantity and net value in the selected window (returns/credit memos are negative rows and are netted). <b>Coverage days</b> = stock qty ÷ daily demand (window qty ÷ window days). <b>Incoming</b> = PO lines with delivery date ≥ ${esc(AS_OF)}; earlier lines are flagged Overdue.</p>
-  <p><b>Thresholds:</b> Critical &lt; ${LOW_COV}d coverage · Low Stock ${LOW_COV}–${OK_COV}d · Healthy ${OK_COV}–${EXCESS_COV}d · Excess &gt; ${EXCESS_COV}d · Watch (no sales) when value &gt; ${fmtMoney(SLOW_VALUE)}. Risk: Critical = stock-out/&lt;${LOW_COV}d with demand &amp; insufficient incoming · High = low stock w/ demand or incoming pending · Watch = excess/overstock or slow-moving value. Demand window is user-selectable (30/60/90/365d).</p>
-  <p><b>Lead time &amp; safety stock (added 2026-09-06, from dim_material_master):</b> Target stock = safety stock + daily demand × lead time. Reorder Status = <b>Reorder</b> when stock ≤ target (needs replenishment now), OK above it, — when the material has no lead-time/safety-stock data. <b>Excess Qty</b> = stock − target (shown when positive). Stock Status reclassifies Healthy → <b>Excess</b> when stock &gt; 2× target (working-capital overstock). Risk escalates (never downgrades): stock that won't survive the lead time (coverage &lt; lead time) or sits below the reorder point raises risk to High — or Watch when incoming already covers the lead time.</p>
-  <p><b>Data notes:</b> 421 inventory rows have zero ma_price (included at SAR 0). 1,624 materials sold in the period have no current stock row (they appear as Out of Stock / No Stock). Plant filter scopes inventory and incoming; sales are company-wide unless a plant/org filter restricts the office set.</p>`;
-  document.getElementById('methodology').innerHTML=html;
-}
-
 /* ---------- refresh / boot ---------- */
 function refresh(){
   const skus=computeSkus();
@@ -614,7 +545,6 @@ function refresh(){
   drawSkuTable(skus);
   const poRows=filteredPoRows();
   drawPoTable(poRows);
-  renderInsights(skus,a);
 }
 
 function fillSelect(id, opts, placeholder){
@@ -729,7 +659,6 @@ function boot(){
   initTheme();
   initUI();
   refresh();
-  renderMethodology();
   const ld=document.getElementById('loading'); if(ld) ld.style.display='none';
 }
 boot();
