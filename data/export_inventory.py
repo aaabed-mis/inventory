@@ -275,12 +275,12 @@ con = duckdb.connect(INCOMING, read_only=True)
 irows, _ = q(con, """
 SELECT po_number, po_item, plant, storage_location, material_number,
        quantity, order_uom, net_value, ton, vendor_number,
-       po_creation_date, delivery_date, stat_rel_del_date
+       po_creation_date, delivery_date, stat_rel_del_date, shipment_status
 FROM sap_prd.fact_incoming
 """)
 incoming = []
 for (po, item, plant, sloc, matnr, qty, uom, value, ton, vendor,
-     poc, deld, statd) in irows:
+     poc, deld, statd, ship) in irows:
     incoming.append({
         "po": po or "", "item": item or "", "plant": plant or "", "sloc": sloc or "",
         "matnr": strip_matnr(matnr), "qty": round(float(qty or 0), 4), "uom": uom or "",
@@ -289,6 +289,7 @@ for (po, item, plant, sloc, matnr, qty, uom, value, ton, vendor,
         "po_date": poc.isoformat() if poc else None,
         "del_date": deld.isoformat() if deld else None,
         "stat_date": statd.isoformat() if statd else None,
+        "ship_status": ship or "",
     })
 con.close()
 print("  incoming lines:", len(incoming))

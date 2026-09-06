@@ -460,12 +460,12 @@ function exportSkuCsv(skus){
 /* ---------- PO table ---------- */
 const PO_COLS=[
   {k:'po',t:'PO',cls:''},{k:'item',t:'Item',cls:''},{k:'matnr',t:'Material',cls:''},
-  {k:'maktx',t:'Description',cls:''},{k:'plant',t:'Plant',cls:''},{k:'sloc',t:'SLoc',cls:''},
+  {k:'maktx',t:'Description',cls:''},
   {k:'vendor_name',t:'Vendor',cls:''},{k:'qty',t:'Qty',cls:'num'},{k:'uom',t:'UoM',cls:''},
   {k:'value',t:'Value',cls:'num'},{k:'po_date',t:'PO Date',cls:''},{k:'del_date',t:'Delivery',cls:''},
-  {k:'status',t:'Status',cls:''},
+  {k:'status',t:'Status',cls:''},{k:'ship_status',t:'Shipment Status',cls:''},
 ];
-const PO_HEAD=['PO','Item','Material','Description','Plant','SLoc','Vendor','Qty','UoM','Value','PO Date','Delivery','Status'];
+const PO_HEAD=['PO','Item','Material','Description','Vendor','Qty','UoM','Value','PO Date','Delivery','Status','Shipment Status'];
 function filteredPoRows(){
   const plantsOk=eligiblePlants();
   const q=state.search.trim().toLowerCase();
@@ -521,8 +521,8 @@ function exportPoCsv(rows){
   });
   const data=[PO_HEAD.join(',')];
   for(const r of sorted){
-    data.push(['po','item','matnr','maktx','plant','sloc','vendor_name','qty','uom','value','po_date','del_date','status']
-      .map(k=>{const v=r[k]; if(v==null)return ''; if(typeof v==='number')return v; return '"'+String(v).replace(/"/g,'""')+'"';}).join(','));
+    data.push(['po','item','matnr','maktx','vendor_name','qty','uom','value','po_date','del_date','status','ship_status']
+          .map(k=>{const v=r[k]; if(v==null)return ''; if(typeof v==='number')return v; return '"'+String(v).replace(/"/g,'""')+'"';}).join(','));
   }
   downloadCsv('inventory_incoming_pos.csv',data.join('\n'));
 }
