@@ -27,6 +27,7 @@ OUT_JS = os.path.join(OUT_DIR, "data.js")
 INV = os.path.join(DUCK, "fact_inventory.duckdb")
 SALES = os.path.join(DUCK, "fact_ztsd_detail.duckdb")
 INCOMING = os.path.join(DUCK, "fact_incoming.duckdb")
+INTRANSIT = os.path.join(DUCK, "fact_intransit.duckdb")
 VENDORS = os.path.join(DUCK, "dim_vendors.duckdb")
 FORECAST = os.path.join(DUCK, "fact_forecast.duckdb")
 
@@ -324,6 +325,47 @@ try:
 except Exception as e:
     print("  WARN fact_forecast:", e)
 
+print("Reading fact_intransit ...")
+# In-transit stock (STO stock transport orders, bsart ZAST). Rows are heavily duplicated
+# (~27x per shipment leg), so take DISTINCT over the natural key. No value column exists —
+# value is derived client-side via material ma_price (from fact_inventory) when available.
+intransit = []
+try:
+    con = duckdb.connect(INTRANSIT, read_only=True)
+    for po, item, matnr, frm, to, sloc, qty, uom, poc in con.execute(
+        "SELECT DISTINCT po_number, po_item, material_number, \"from\", \"to\", storage_location, quantity, order_uom, po_creation_date "
+        "FROM sap_prd.fact_intransit"
+    ).fetchall():
+        intransit.append({
+            "po": po or "", "item": item or "", "matnr": strip_matnr(matnr),
+            "from": frm or "", "to": to or "", "sloc": sloc or "",
+            "qty": round(float(qty or 0), 4), "uom": uom or "",
+            "po_date": poc.isoformat() if poc else None,
+        })
+    con.close()
+except Exception as e:
+    print("  WARN fact_intransit:", e)
+    intransit = []
+# register 'to' plants so they get names in the payload plants dim
+for row in intransit:
+    p = row["to"]
+    if p and p not in plants:
+        plants[p] = {"name1": "", "regio": "", "vkorg": ""}
+# ma_price per material (intransit has no value column; value = qty x ma_price, MAX per material)
+try:
+    con = duckdb.connect(INV, read_only=True)
+    for matnr, mp in con.execute(
+        "SELECT matnr, MAX(ma_price) FROM sap_prd.fact_inventory WHERE ma_price IS NOT NULL GROUP BY 1"
+    ).fetchall():
+        m = strip_matnr(matnr)
+        if m in mats:
+            mats[m]["ma_price"] = float(mp or 0)
+    con.close()
+    print("  ma_price map loaded for", sum(1 for mm in mats.values() if mm.get("ma_price")), "materials")
+except Exception as e:
+    print("  WARN ma_price:", e)
+print("  intransit lines (distinct):", len(intransit))
+
 # plant dims union: add incoming plants + sales offices not in inventory plants
 for row in incoming:
     p = row["plant"]
@@ -347,6 +389,7 @@ meta = {
     "grain": "matnr x werks (inventory); demand windows pre-aggregated",
     "inv_combos": len(inventory), "materials": len(mats), "plants": len(plants),
     "sales_materials": len(sales_mat), "incoming_lines": len(incoming),
+    "intransit_lines": len(intransit),
     "forecast_combos": len(forecast_mat), "forecast_months": sorted(fc_months),
     "notes": [
         "Inventory value = SUM(clabs x ma_price) per matnr+werks (421 rows have zero ma_price; included at 0 value).",
@@ -354,6 +397,7 @@ meta = {
         "Sales qty = SUM(qty_in_sku) (SKU/base units); value windows use NET_VALUE (returns & credit memos negative).",
         "Demand windows anchored to ref_date (max sales date).",
         "Incoming = open PO lines (all delivery dates; overdue flagged client-side).",
+        "Intransit = fact_intransit DISTINCT (po,item,matnr,from,to,sloc,qty) — source rows are ~27x duplicated; no value column (client-side value via ma_price).",
         "Forecast = fact_forecast per material x plant (current month, zbqty/zbvalue).",
         "Aging buckets mirror MaterialAgingDashboard: VKORG 1000/blank -> CHARG date; VKORG 6000 -> VFDAT; days from export run date.",
         "Aging source of truth = material_aging.duckdb (same table as Material Aging Dashboard) so Expired/Near-Expiry KPIs match it exactly.",
@@ -371,6 +415,7 @@ payload = {
     "sales_mat_office": sales_mat_office,
     "trend_month": trend_month,
     "incoming": incoming,
+    "intransit": intransit,
     "forecast_mat": forecast_mat,
 }
 

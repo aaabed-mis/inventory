@@ -24,7 +24,8 @@ let DATA = null;   // window.__INVENTORY__
 const state = {
   vkorg:'', werks:new Set(), extwg:'', matkl:'', window:90, status:'', risk:'', replen:'', search:'',
   sortKey:'value', sortDir:-1, page:1, pageSize:50,
-  poSortKey:'del_date', poSortDir:1, poPage:1, poPageSize:50, topN:50
+  poSortKey:'del_date', poSortDir:1, poPage:1, poPageSize:50, topN:50,
+  itSortKey:'po', itSortDir:1, itPage:1, itPageSize:50
 };
 const charts = {};
 let AS_OF = null; // date string YYYY-MM-DD (data generation date)
@@ -243,6 +244,7 @@ function aggregate(skus){
     reorderCount:0, reorderValue:0, excessQtyTotal:0,
     salesQty:0, salesValue:0, incQty:0, incValue:0, posCount:0, overdueQty:0, overdueValue:0,
     coverageDays:null, totalDaily:0,
+    intransitValue:0, intransitQty:0, intransitLines:0,
     expiredValue:0, expiredBatches:0, nearExpiryValue:0, nearExpiryQty:0, nearExpiryBatches:0,
     byStatus:{}, byRisk:{}, byExtwg:{}, byMatnr:{}
   };
@@ -275,6 +277,7 @@ function aggregate(skus){
     a.byMatnr[mk]=(a.byMatnr[mk]||0)+s.value;
   }
   a.coverageDays = a.totalDaily>0 ? a.invQty/a.totalDaily : null;
+  a.intransitValue = sumIntransitValue(); a.intransitQty = sumIntransitQty(); a.intransitLines = DATA.intransit?DATA.intransit.length:0;
   return a;
 }
 
@@ -319,7 +322,7 @@ function renderKPIs(a){
     {cls:'k-risk',label:'Out-of-Stock SKUs',value:fmtInt(a.outOfStock),sub:fmtInt(a.outWithDemand)+' with recent demand'},
     {cls:'k-warn',label:'Critical / High Risk',value:fmtInt(a.criticalCount)+' / '+fmtInt(a.highCount),sub:'SKUs needing attention'},
     {cls:'k-warn',label:'Potential Excess Value',value:fmtMoney(a.excessValue),sub:fmtInt(a.excessCount)+' SKUs > '+EXCESS_COV+'d coverage'},
-    {cls:'k-good',label:'Portfolio Coverage',value:a.coverageDays==null?'—':fmtNum(a.coverageDays,0)+' d',sub:'stock ÷ daily demand'},
+    {cls:'k-good',label:'Intransit Value',value:fmtMoney(a.intransitValue),sub:fmtInt(a.intransitQty)+' units · '+fmtInt(a.intransitLines)+' lines'}, 
   ];
   document.getElementById('kpis').innerHTML=cards.map(c=>`
     <div class="kpi ${c.cls}">
@@ -533,6 +536,65 @@ function downloadCsv(name,text){
   setTimeout(()=>URL.revokeObjectURL(a.href),500);
 }
 
+/* ---------- intransit ---------- */
+const IT_COLS=[
+  {k:'po',t:'PO',cls:''},{k:'item',t:'Item',cls:''},{k:'matnr',t:'Material',cls:''},
+  {k:'maktx',t:'Description',cls:''},{k:'fromName',t:'From Plant',cls:''},
+  {k:'toName',t:'To Plant',cls:''},{k:'qty',t:'Qty',cls:'num'},{k:'uom',t:'UoM',cls:''},
+  {k:'value',t:'Value',cls:'num'},{k:'po_date',t:'PO Date',cls:''},
+];
+const IT_HEAD=['PO','Item','Material','Description','From Plant','To Plant','Qty','UoM','Value','PO Date'];
+const IT_CSV_KEYS=['po','item','matnr','maktx','fromName','toName','qty','uom','value','po_date'];
+function plantName(p){ const pl=DATA.plants||{}; return (pl[p]&&pl[p].name1)||p||''; }
+function itValue(r){ const mp=(DATA.mats[r.matnr]&&DATA.mats[r.matnr].ma_price)||0; return r.qty*mp; }
+function intransitRows(){
+  const q=state.search.trim().toLowerCase();
+  const rows=[];
+  for(const r of DATA.intransit||[]){
+    const mat=DATA.mats[r.matnr]||{};
+    if(q && !(r.matnr+' '+(mat.maktx||'')).toLowerCase().includes(q)) continue;
+    rows.push({...r, maktx:mat.maktx||'', fromName:plantName(r.from), toName:plantName(r.to), value:itValue(r)});
+  }
+  return rows;
+}
+function sumIntransitValue(){ return (DATA.intransit||[]).reduce((s,r)=>s+itValue(r),0); }
+function sumIntransitQty(){ return (DATA.intransit||[]).reduce((s,r)=>s+(r.qty||0),0); }
+function drawItTable(rows){
+  const cols=IT_COLS;
+  document.querySelector('#it-table thead').innerHTML=
+    '<tr>'+cols.map(c=>`<th data-k="${c.k}" class="${c.cls}">${c.t}${state.itSortKey===c.k?(state.itSortDir<0?' ▼':' ▲'):''}</th>`).join('')+'</tr>';
+  const sorted=[...rows].sort((x,y)=>{
+    let a=x[state.itSortKey],b=y[state.itSortKey];
+    if(typeof a==='number'&&typeof b==='number')return (a-b)*state.itSortDir;
+    a=(a==null?'':String(a));b=(b==null?'':String(b));
+    return a<b?-1*state.itSortDir:a>b?1*state.itSortDir:0;
+  });
+  const total=sorted.length, pages=Math.max(1,Math.ceil(total/state.itPageSize));
+  if(state.itPage>pages)state.itPage=pages;
+  const start=(state.itPage-1)*state.itPageSize, pageRows=sorted.slice(start,start+state.itPageSize);
+  document.querySelector('#it-table tbody').innerHTML=pageRows.map(r=>'<tr>'+
+    cols.map(c=>{
+      let v=r[c.k];
+      if(c.k==='matnr') return `<td>${esc(strip0(v))}</td>`;
+      if(c.k==='qty') return `<td class="num">${fmtInt(v)}</td>`;
+      if(c.k==='value') return `<td class="num">${fmtMoney(v)}</td>`;
+      if(c.k==='po_date') return `<td>${v?esc(v.slice(0,10)):'—'}</td>`;
+      return `<td>${esc(v==null?'':v)}</td>`;
+    }).join('')+'</tr>').join('');
+  const totVal=rows.reduce((s,r)=>s+r.value,0);
+  document.getElementById('it-count').textContent=fmtInt(rows.length)+' lines · '+fmtMoney(totVal);
+  document.getElementById('it-page-info').textContent='Page '+state.itPage+' of '+pages+' · '+fmtInt(total)+' lines';
+  document.getElementById('it-prev').disabled=state.itPage<=1;
+  document.getElementById('it-next').disabled=state.itPage>=pages;
+}
+function exportItCsv(rows){
+  const data=[IT_HEAD.join(',')];
+  for(const r of rows){
+    data.push(IT_CSV_KEYS.map(k=>{const v=r[k]; if(v==null)return ''; if(typeof v==='number')return v; return '"'+String(v).replace(/"/g,'""')+'"';}).join(','));
+  }
+  downloadCsv('inventory_intransit.csv',data.join('\n'));
+}
+
 /* ---------- refresh / boot ---------- */
 function refresh(){
   const skus=computeSkus();
@@ -545,6 +607,7 @@ function refresh(){
   drawSkuTable(skus);
   const poRows=filteredPoRows();
   drawPoTable(poRows);
+  drawItTable(intransitRows());
 }
 
 function fillSelect(id, opts, placeholder){
@@ -599,8 +662,12 @@ function initUI(){
   document.getElementById('po-page-size').onchange=e=>{ state.poPageSize=parseInt(e.target.value,10); state.poPage=1; refresh(); };
   document.getElementById('po-prev').onclick=()=>{ if(state.poPage>1){state.poPage--; refresh();} };
   document.getElementById('po-next').onclick=()=>{ state.poPage++; refresh(); };
+  document.getElementById('it-page-size').onchange=e=>{ state.itPageSize=parseInt(e.target.value,10); state.itPage=1; refresh(); };
+  document.getElementById('it-prev').onclick=()=>{ if(state.itPage>1){state.itPage--; refresh();} };
+  document.getElementById('it-next').onclick=()=>{ state.itPage++; refresh(); };
   document.getElementById('export-sku-csv').onclick=()=>exportSkuCsv(computeSkus());
   document.getElementById('export-po-csv').onclick=()=>exportPoCsv(filteredPoRows());
+  document.getElementById('export-it-csv').onclick=()=>exportItCsv(intransitRows());
   document.querySelector('#sku-table thead').onclick=e=>{
     const th=e.target.closest('th'); if(!th) return; const k=th.dataset.k;
     if(state.sortKey===k) state.sortDir*=-1; else {state.sortKey=k; state.sortDir=-1;}
@@ -611,8 +678,13 @@ function initUI(){
     if(state.poSortKey===k) state.poSortDir*=-1; else {state.poSortKey=k; state.poSortDir=-1;}
     state.poPage=1; refresh();
   };
+  document.querySelector('#it-table thead').onclick=e=>{
+    const th=e.target.closest('th'); if(!th) return; const k=th.dataset.k;
+    if(state.itSortKey===k) state.itSortDir*=-1; else {state.itSortKey=k; state.itSortDir=-1;}
+    state.itPage=1; refresh();
+  };
 }
-function resetPages(){ state.page=1; state.poPage=1; }
+function resetPages(){ state.page=1; state.poPage=1; state.itPage=1; }
 
 /* multi-select (plant) — mirrors MaterialAgingDashboard pattern */
 function injectMSToggle(root,label){
