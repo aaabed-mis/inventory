@@ -163,28 +163,30 @@ function computeSkus(){
     if(q && !(m+' '+(mat.maktx||'')).toLowerCase().includes(q)) continue;
     const agm = agingByMat.get(m)||{expiredVal:0, expiredBatches:0, nearVal:0, nearQty:0, nearBatches:0};
     const qty=iv?iv.qty:0, value=iv?iv.value:0, huom=iv?iv.huom:0;
-    const qW=dm?dm.qW:0, vW=dm?dm.vW:0, q365=dm?dm.q365:0, v365=dm?dm.v365:0;
-    const fcQty=fm?fm.qty:0;
-    const dailyDemand=qW/dailyW;
+    const umrez=(mat.umrez||1)||1;
+    const fcQty=fm?(fm.qty*umrez):0;    // Forecast zbqty in cartons -> pieces (× umrez)
+    const qW = dm?dm.qW:0;                          // Sales Qty in PIECES (payload in base units)
+    const dailyDemand = qW/dailyW;                  // daily demand in PIECES (matches qty in pieces)
+    const vW=dm?dm.vW:0, q365=dm?dm.q365:0, v365=dm?dm.v365:0;
     const incQty=ic?ic.qty:0, incValue=ic?ic.value:0, overdueQty=ic?ic.overdueQty:0;
     // ---- lead time / safety stock aware (from dim_material_master) ----
-    const leadTime=mat.lead_time||0, safetyStock=mat.safety_stock||0;
-    const umrez=mat.umrez||1;
-    // all quantities in CARTONS (÷ umrez) so coverage / target / excess stay unit-consistent
-    const qtyC = qty/umrez, huomC = huom/umrez, safetyStockC = safetyStock/umrez;
-    const coverage=dailyDemand>0?qtyC/dailyDemand:null;
-    const target = safetyStockC + dailyDemand*leadTime;      // target stock = LT demand + safety stock (cartons)
-    const excessQty = target>0 ? Math.max(0, qtyC-target) : 0;
+    const leadTime=mat.lead_time||0, safetyStockPcs=mat.safety_stock||0;
+    const safetyStock = safetyStockPcs;          // Safety Stock in pieces
+    const coverage=dailyDemand>0?qty/dailyDemand:null;
+    const target = safetyStockPcs + dailyDemand*leadTime;   // target stays in base units (pieces)
+    const excessQty = target>0 ? Math.max(0, qty-target) : 0;
+    const unitPrice = qty>0 ? value/qty : 0;                 // weighted avg price for excess-value calc
+    const excessValue = excessQty>0 ? excessQty*unitPrice : 0;
     const rop = target;                                      // reorder point = same target
     const hasReorderData = (safetyStock>0) || (leadTime>0);
     let reorder='';
-    if(hasReorderData && rop>0 && qtyC<=rop) reorder='Reorder';   // at/below reorder point
+    if(hasReorderData && rop>0 && qty<=rop) reorder='Reorder';   // at/below reorder point
     else if(hasReorderData) reorder='OK';
     // overstock flag: qty > 2x lead-time target -> excess working capital (status axis only)
-    const overstock = hasReorderData && target>0 && qtyC>2*target;
-    // stock status (uses carton coverage)
+    const overstock = hasReorderData && target>0 && qty>2*target;
+    // stock status (uses coverage)
     let status;
-    if(qtyC<=0){ status = qW>0 ? 'Out of Stock' : 'No Stock'; }
+    if(qty<=0){ status = qW>0 ? 'Out of Stock' : 'No Stock'; }
     else if(qW<=0){ status = 'No Recent Sales'; }
     else if(coverage<LOW_COV){ status='Critical'; }
     else if(coverage<OK_COV){ status='Low Stock'; }
@@ -194,13 +196,13 @@ function computeSkus(){
     const incCov = dailyDemand>0 ? incQty/dailyDemand : null;
     let risk='Healthy';
     if(qW>0){
-      if(qtyC<=0) risk = (incCov!=null && incCov>=30) ? 'High' : 'Critical';
+      if(qty<=0) risk = (incCov!=null && incCov>=30) ? 'High' : 'Critical';
       else if(coverage==null) risk='Critical';
       else if(coverage<LOW_COV) risk = (incCov!=null && incCov>=30) ? 'High' : 'Critical';
       else if(coverage<OK_COV) risk = (incCov!=null && incCov>=30) ? 'Healthy' : 'High';
       else if(coverage>EXCESS_COV) risk = (incCov!=null && incCov>=30) ? 'Watch' : 'Healthy';
     } else {
-      if(qtyC>0 && (coverage==null || coverage>EXCESS_COV) && value>SLOW_VALUE) risk='Watch';
+      if(qty>0 && (coverage==null || coverage>EXCESS_COV) && value>SLOW_VALUE) risk='Watch';
     }
     const replen = incQty>0 ? 'Incoming' : 'None';
     // risk escalation — NEVER downgrades: stock must survive the lead time, and must not sit below reorder point.
@@ -221,9 +223,9 @@ function computeSkus(){
     if(state.replen && replen!==state.replen) continue;
     skus.push({matnr:m, maktx:mat.maktx||'', extwg:mat.extwg||'', ewbez:mat.ewbez||'',
       matkl:mat.matkl||'', wgbez:mat.wgbez||'', mfrnr:mat.mfrnr||'', name11:mat.name11||'',
-      qty:qtyC, value, huom:huomC, umrez, plantCount:iv?iv.plants.size:0, plantsArr:iv?[...iv.plants]:[],
-      qW, vW, q365, v365, dailyDemand, coverage, fcQty:fcQty/umrez,
-      leadTime, safetyStock:safetyStockC, target, excessQty, reorder,
+      qty, value, huom, plantCount:iv?iv.plants.size:0, plantsArr:iv?[...iv.plants]:[],
+      qW, vW, q365, v365, dailyDemand, coverage, fcQty,
+      leadTime, safetyStock, target, excessQty, excessValue, reorder, umrez,
       expiredVal:agm.expiredVal, expiredBatches:agm.expiredBatches,
       nearVal:agm.nearVal, nearQty:agm.nearQty, nearBatches:agm.nearBatches,
       incQty, incValue, pos:ic?ic.pos:0, overdueQty, overdueValue:ic?ic.overdueValue:0,
@@ -309,7 +311,7 @@ function incomingByMonth(){
 /* ---------- KPIs ---------- */
 function renderKPIs(a){
   const cards=[
-    {cls:'k-value',label:'Total Inventory Value',value:fmtMoney(a.invValue),sub:fmtInt(a.invQty)+' cartons · '+fmtInt(a.skuCount)+' SKUs'},
+    {cls:'k-value',label:'Total Inventory Value',value:fmtMoney(a.invValue),sub:fmtInt(a.invQty)+' units · '+fmtInt(a.skuCount)+' SKUs'},
     {cls:'k-risk',label:'Expired Value',value:fmtMoney(a.expiredValue),sub:fmtNum(a.invValue?(a.expiredValue/a.invValue*100):0,1)+'% of stock · '+fmtInt(a.expiredBatches)+' batches'},
     {cls:'k-warn',label:'Near Expiry Value (0-120 days)',value:fmtMoney(a.nearExpiryValue),sub:fmtInt(a.nearExpiryQty)+' units · '+fmtInt(a.nearExpiryBatches)+' batches'},
     {cls:'k-value',label:'Incoming PO Value',value:fmtMoney(a.incValue),sub:fmtInt(a.incQty)+' units · '+fmtInt(a.posCount)+' PO lines'},
@@ -378,24 +380,25 @@ const SKU_COLS=[
   {k:'maktx',t:'Description',cls:''},
   {k:'ewbez',t:'Ext Group',cls:''},
   {k:'plantCount',t:'Plants',cls:'num'},
-  {k:'huom',t:'HUOM (Ctn)',cls:'num'},
+  {k:'qty',t:'Qty',cls:'num'},
   {k:'value',t:'Value',cls:'num'},
-  {k:'qW',t:'Sales Qty (Ctn)',cls:'num'},
-  {k:'dailyDemand',t:'Daily Sales (Ctn)',cls:'num'},
-  {k:'coverage',t:'Coverage d',cls:'num'},
+  {k:'qW',t:'Sales Qty',cls:'num'},
+  {k:'dailyDemand',t:'Daily Sales',cls:'num'},
+  {k:'coverage',t:'Coverage (d)',cls:'num'},
   {k:'leadTime',t:'Lead Time',cls:'num'},
-  {k:'safetyStock',t:'Safety Stock (Ctn)',cls:'num'},
-  {k:'target',t:'Target (Ctn)',cls:'num'},
-  {k:'excessQty',t:'Excess Qty (Ctn)',cls:'num'},
-  {k:'fcQty',t:'Forecast (Ctn)',cls:'num'},
-  {k:'incQty',t:'Incoming Qty (Ctn)',cls:'num'},
+  {k:'safetyStock',t:'Safety Stock',cls:'num'},
+  {k:'target',t:'Target',cls:'num'},
+  {k:'excessQty',t:'Excess Qty',cls:'num'},
+  {k:'excessValue',t:'Excess Value',cls:'num'},
+  {k:'fcQty',t:'Forecast',cls:'num'},
+  {k:'incQty',t:'Incoming Qty',cls:'num'},
   {k:'status',t:'Stock Status',cls:''},
   {k:'risk',t:'Risk',cls:''},
   {k:'reorder',t:'Reorder',cls:''},
   {k:'lastSale',t:'Last Sale',cls:''},
 ];
-const SKU_HEAD=['SKU','Description','Ext Group','Plants','HUOM (Ctn)','Value','Sales Qty (Ctn)','Daily Sales (Ctn)','Coverage d','Lead Time','Safety Stock (Ctn)','Target (Ctn)','Excess Qty (Ctn)','Forecast (Ctn)','Incoming Qty (Ctn)','Stock Status','Risk','Reorder','Last Sale'];
-const SKU_CSV_KEYS=['matnr','maktx','ewbez','plantCount','huom','value','qW','dailyDemand','coverage','leadTime','safetyStock','target','excessQty','fcQty','incQty','status','risk','reorder','lastSale'];
+const SKU_HEAD=['SKU','Description','Ext Group','Plants','Qty','Value','Sales Qty','Daily Sales','Coverage (d)','Lead Time','Safety Stock','Target','Excess Qty','Excess Value','Forecast','Incoming Qty','Stock Status','Risk','Reorder','Last Sale'];
+const SKU_CSV_KEYS=['matnr','maktx','ewbez','plantCount','qty','value','qW','dailyDemand','coverage','leadTime','safetyStock','target','excessQty','excessValue','fcQty','incQty','status','risk','reorder','lastSale'];
 function drawSkuTable(skus){
   const cols=SKU_COLS;
   document.querySelector('#sku-table thead').innerHTML=
@@ -424,8 +427,9 @@ function drawSkuTable(skus){
       if(c.k==='safetyStock') return `<td class="num">${fmtNum(v,0)}</td>`;
       if(c.k==='target') return `<td class="num">${v>0?fmtNum(v,0):'—'}</td>`;
       if(c.k==='excessQty') return `<td class="num" style="color:${v>0?'var(--warn)':'inherit'}">${v>0?fmtNum(v,0):'—'}</td>`;
+      if(c.k==='excessValue') return `<td class="num" style="color:${v>0?'var(--warn)':'inherit'}">${v>0?fmtMoney(v):'—'}</td>`;
       if(c.k==='qty'||c.k==='huom'||c.k==='fcQty'||c.k==='qW'||c.k==='incQty') return `<td class="num">${fmtInt(v)}</td>`;
-      if(c.k==='dailyDemand') return `<td class="num">${fmtNum(v,1)}</td>`;
+      if(c.k==='dailyDemand') return `<td class="num">${fmtNum(r.dailyDemand,1)}</td>`;
       if(c.k==='value'||c.k==='vW'||c.k==='incValue') return `<td class="num">${fmtMoney(v)}</td>`;
       return `<td class="num">${fmtInt(v)}</td>`;
     }).join('')+'</tr>').join('');
@@ -559,7 +563,7 @@ function buildInsights(skus,a){
   // excess vs lead-time target
   const ov=skus.filter(s=>s.status==='Excess'&&s.target>0&&s.qty>2*s.target);
   const ovVal=ov.reduce((s,x)=>s+x.value,0), ovQty=ov.reduce((s,x)=>s+x.excessQty,0);
-  if(ov.length) ins.push({rank:78,cls:'ic-amber',icon:'📦',html:`<b>${fmtInt(ov.length)} SKUs</b> hold more than 2× their lead-time target (${fmtMoney(ovVal)}; ~${fmtInt(ovQty)} cartons above target) — excess working capital.`,meta:'Overstock vs lead-time target'});
+  if(ov.length) ins.push({rank:78,cls:'ic-amber',icon:'📦',html:`<b>${fmtInt(ov.length)} SKUs</b> hold more than 2× their lead-time target (${fmtMoney(ovVal)}; ~${fmtInt(ovQty)} units above target) — excess working capital.`,meta:'Overstock vs lead-time target'});
   // high demand insufficient incoming
   const hd=skus.filter(s=>s.qW>0 && s.dailyDemand>0 && (s.coverage==null||s.coverage<LOW_COV) && s.incQty < s.dailyDemand*LOW_COV);
   if(hd.length) ins.push({rank:92,cls:'ic-red',icon:'🔥',html:`<b>${fmtInt(hd.length)} high-demand SKUs</b> have less than ${LOW_COV} days of stock and insufficient incoming supply (< ${LOW_COV} days of demand on order).`,meta:'Replenishment gap'});

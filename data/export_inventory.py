@@ -182,9 +182,9 @@ for m, dim in mats.items():
     dim["lead_time"] = v[0] if v else 0
     dim["safety_stock"] = v[1] if v else 0
 
-# UMREZ (pieces per carton) per material from fact_mard — Sales Qty / Safety Stock (and all derived
-# quantities: target, excess, forecast, incoming) are expressed in CARTONS (÷ UMREZ) so coverage and
-# target/excess math stay unit-consistent. Single UMREZ per material (verified 0 conflicts/0 nulls).
+# UMREZ (pieces per carton) per material from fact_mard. REVERTED 2026-09-06: all calculations back to
+# PIECES — demand windows stay in base units (qty_in_sku), no column divided by UMREZ. umrez still emitted
+# in the payload for reference. Single UMREZ per material; default 1 when missing.
 try:
     mard = duckdb.connect(os.path.join(DUCK, "fact_mard.duckdb"), read_only=True)
     umrez_map = {}
@@ -218,12 +218,11 @@ sql = "SELECT " + ", ".join(sel) + " FROM sap_prd.fact_ztsd_detail GROUP BY 1"
 sales_mat = {}
 for r in con.execute(sql).fetchall():
     m = strip_matnr(r[0])
-    umr = umrez_map.get(m, 1.0) or 1.0
     sales_mat[m] = {
-        "q30": round(float(r[1] or 0)/umr, 4), "v30": float(r[2] or 0),
-        "q60": round(float(r[3] or 0)/umr, 4), "v60": float(r[4] or 0),
-        "q90": round(float(r[5] or 0)/umr, 4), "v90": float(r[6] or 0),
-        "q365": round(float(r[7] or 0)/umr, 4), "v365": float(r[8] or 0),
+        "q30": round(float(r[1] or 0), 4), "v30": float(r[2] or 0),
+        "q60": round(float(r[3] or 0), 4), "v60": float(r[4] or 0),
+        "q90": round(float(r[5] or 0), 4), "v90": float(r[6] or 0),
+        "q365": round(float(r[7] or 0), 4), "v365": float(r[8] or 0),
         "last_sale": r[9].isoformat() if r[9] else None,
         "active_months": int(r[10] or 0),
     }
@@ -255,12 +254,11 @@ sql = ("SELECT material, sales_office, "
        "MAX(inv_date) FROM sap_prd.fact_ztsd_detail GROUP BY 1,2")
 sales_mat_office = []
 for r in con.execute(sql).fetchall():
-    umr = umrez_map.get(strip_matnr(r[0]), 1.0) or 1.0
     sales_mat_office.append([
         strip_matnr(r[0]), r[1],
-        round(float(r[2] or 0)/umr, 4), float(r[3] or 0),
-        round(float(r[4] or 0)/umr, 4), float(r[5] or 0),
-        round(float(r[6] or 0)/umr, 4), float(r[7] or 0),
+        round(float(r[2] or 0), 4), float(r[3] or 0),
+        round(float(r[4] or 0), 4), float(r[5] or 0),
+        round(float(r[6] or 0), 4), float(r[7] or 0),
         r[8].isoformat() if r[8] else None,
     ])
 print("  material x office combos:", len(sales_mat_office))
