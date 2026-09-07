@@ -25,6 +25,7 @@ const state = {
   vkorg:'', werks:new Set(), extwg:'', matkl:'', maabc:'', window:90, status:'', risk:'', replen:'', search:'',
   sortKey:'value', sortDir:-1, page:1, pageSize:50,
   colWidths:{},   // per-column px widths (Material Analysis resize)
+  hiddenCols:new Set(['vendor','matkl','ewbez','maabc','umrez','plantCount','lastSale']),   // hidden-by-default columns
   poSortKey:'del_date', poSortDir:1, poPage:1, poPageSize:50, topN:50,
   itSortKey:'po', itSortDir:1, itPage:1, itPageSize:50
 };
@@ -230,7 +231,7 @@ function computeSkus(){
     if(state.replen && replen!==state.replen) continue;
     skus.push({matnr:m, maktx:mat.maktx||'', extwg:mat.extwg||'', ewbez:mat.ewbez||'',
       matkl:mat.matkl||'', wgbez:mat.wgbez||'', mfrnr:mat.mfrnr||'', name11:mat.name11||'',
-      qty, value, huom, maabc:mat.maabc||'', plantCount:iv?iv.plants.size:0, plantsArr:iv?[...iv.plants]:[],
+      qty, value, huom, maabc:mat.maabc||'', vendor:mat.name11||mat.name1||'', matkl:mat.matkl||'', ewbez:mat.ewbez||'', plantCount:iv?iv.plants.size:0, plantsArr:iv?[...iv.plants]:[],
       qW, vW, q365, v365, dailyDemand, coverage, coverageMo, fcQty,
       leadTime, safetyStock, target, excessQty, excessValue, reorder, umrez,
       expiredVal:agm.expiredVal, expiredBatches:agm.expiredBatches,
@@ -388,9 +389,12 @@ function renderIncoming(by){
 const SKU_COLS=[
   {k:'matnr',t:'SKU',cls:''},
   {k:'maktx',t:'Description',cls:''},
+  {k:'vendor',t:'Vendor',cls:''},
+  {k:'matkl',t:'Mat Group',cls:''},
+  {k:'ewbez',t:'Ext Mat Group',cls:''},
   {k:'maabc',t:'ABC',cls:''},
   {k:'umrez',t:'Factor',cls:'num'},
-  {k:'plantCount',t:'Plants',cls:'num'},
+  {k:'plantCount',t:'Plant',cls:'num'},
   {k:'qty',t:'Qty',cls:'num'},
   {k:'value',t:'Value',cls:'num'},
   {k:'qW',t:'Sales Qty',cls:'num'},
@@ -408,10 +412,11 @@ const SKU_COLS=[
   {k:'reorder',t:'Reorder',cls:''},
   {k:'lastSale',t:'Last Sale',cls:''},
 ];
-const SKU_HEAD=['SKU','Description','ABC','Factor','Plants','Qty','Value','Sales Qty','Daily Sales','Coverage (mo)','Lead Time','Safety Stock','Ideal Stock','Sales Forecast','Excess Qty','Excess Value','Incoming Qty','Stock Status','Risk','Reorder','Last Sale'];
-const SKU_CSV_KEYS=['matnr','maktx','maabc','umrez','plantCount','qty','value','qW','dailyDemand','coverageMo','leadTime','safetyStock','target','fcQty','excessQty','excessValue','incQty','status','risk','reorder','lastSale'];
+const SKU_HEAD=['SKU','Description','Vendor','Mat Group','Ext Mat Group','ABC','Factor','Plant','Qty','Value','Sales Qty','Daily Sales','Coverage (mo)','Lead Time','Safety Stock','Ideal Stock','Sales Forecast','Excess Qty','Excess Value','Incoming Qty','Stock Status','Risk','Reorder','Last Sale'];
+const SKU_CSV_KEYS=['matnr','maktx','vendor','matkl','ewbez','maabc','umrez','plantCount','qty','value','qW','dailyDemand','coverageMo','leadTime','safetyStock','target','fcQty','excessQty','excessValue','incQty','status','risk','reorder','lastSale'];
 function drawSkuTable(skus){
-  const cols=SKU_COLS;
+  const cols=SkuVisibleCols();
+  SKU_VISIBLE=cols;
   document.querySelector('#sku-table thead').innerHTML=
     '<tr>'+cols.map(c=>`<th data-k="${c.k}" class="${c.cls}">${c.t}${state.sortKey===c.k?(state.sortDir<0?' ▼':' ▲'):''}</th>`).join('')+'</tr>';
   const sorted=[...skus].sort((x,y)=>{
@@ -428,7 +433,7 @@ function drawSkuTable(skus){
     cols.map(c=>{
       let v=r[c.k];
       if(c.k==='matnr') return `<td>${esc(strip0(v))}</td>`;
-      if(c.k==='maktx') return `<td>${esc(v)}</td>`;
+      if(c.k==='maktx'||c.k==='vendor'||c.k==='matkl'||c.k==='ewbez') return `<td>${esc(v||'')}</td>`;
       if(c.k==='status') return `<td><span class="tag ${STATUS_CLASS[v]||'t-None'}">${esc(v)}</span></td>`;
       if(c.k==='risk') return `<td><span class="tag ${RISK_CLASS[v]||'t-None'}">${esc(v)}</span></td>`;
       if(c.k==='reorder') return `<td><span class="tag ${v==='Reorder'?'t-Overdue':v==='OK'?'t-Incoming':'t-None'}">${v||'—'}</span></td>`;
@@ -450,10 +455,32 @@ function drawSkuTable(skus){
   document.getElementById('next').disabled=state.page>=pages;
   setupSkuResize();
 }
-const SKU_DEF_WIDTHS={matnr:95,maktx:280,maabc:48,umrez:55,plantCount:58,qty:90,value:120,qW:95,dailyDemand:95,coverageMo:100,leadTime:68,safetyStock:90,target:95,fcQty:100,excessQty:88,excessValue:120,incQty:95,status:120,risk:95,reorder:88,lastSale:95};
+const SKU_DEF_WIDTHS={matnr:95,maktx:280,vendor:200,matkl:110,ewbez:150,maabc:48,umrez:55,plantCount:58,qty:90,value:120,qW:95,dailyDemand:95,coverageMo:100,leadTime:68,safetyStock:90,target:95,fcQty:100,excessQty:88,excessValue:120,incQty:95,status:120,risk:95,reorder:88,lastSale:95};
+let SKU_VISIBLE=SKU_COLS;   // columns currently shown (updated each draw)
+function SkuVisibleCols(){ return SKU_COLS.filter(c=>!state.hiddenCols.has(c.k)); }
+function initColMan(){
+  const menu=document.getElementById('colman-menu'); if(!menu) return;
+  menu.innerHTML=SKU_COLS.map(c=>{
+    const on=!state.hiddenCols.has(c.k);
+    return `<label class="colman-item"><input type="checkbox" data-k="${c.k}" ${on?'checked':''}><span>${esc(c.t)}</span></label>`;
+  }).join('');
+  menu.querySelectorAll('input').forEach(inp=>{
+    inp.onchange=()=>{
+      if(inp.checked) state.hiddenCols.delete(inp.dataset.k);
+      else state.hiddenCols.add(inp.dataset.k);
+      refresh();
+    };
+  });
+  document.getElementById('colman-toggle').onclick=e=>{
+    e.stopPropagation();
+    menu.classList.toggle('open');
+  };
+  // close on outside click
+  document.addEventListener('click', e=>{ if(!e.target.closest('.colman')) menu.classList.remove('open'); });
+}
 function setupSkuResize(){
   const tbl=document.getElementById('sku-table'); if(!tbl) return;
-  const cols=SKU_COLS;
+  const cols=SKU_VISIBLE.length?SKU_VISIBLE:SKU_COLS;
   // (re)build colgroup with default + persisted widths — honored under table-layout:fixed
   let cg=tbl.querySelector('colgroup');
   if(!cg){ cg=document.createElement('colgroup'); tbl.insertBefore(cg, tbl.querySelector('thead')); }
@@ -477,7 +504,8 @@ function setupSkuResize(){
 }
 function applySkuColWidth(k, w){
   const tbl=document.getElementById('sku-table'); if(!tbl) return;
-  const idx=SKU_COLS.findIndex(c=>c.k===k); if(idx<0) return;
+  const cols=SKU_VISIBLE.length?SKU_VISIBLE:SKU_COLS;
+  const idx=cols.findIndex(c=>c.k===k); if(idx<0) return;
   const col=tbl.querySelector(`colgroup > col:nth-child(${idx+1})`);
   if(col) col.style.width=w+'px';
 }
@@ -499,9 +527,12 @@ function exportSkuCsv(skus){
     return a<b?-1*state.sortDir:a>b?1*state.sortDir:0;
   });
   const limited = state.topN>0 ? sorted.slice(0,state.topN) : sorted;
-  const rows=[SKU_HEAD.join(',')];
+  const cols=SKU_VISIBLE.length?SKU_VISIBLE:SKU_COLS;
+  const head=cols.map(c=>c.t);
+  const keys=cols.map(c=>c.k);
+  const rows=[head.join(',')];
   for(const r of limited){
-    rows.push(SKU_CSV_KEYS.map(k=>{
+    rows.push(keys.map(k=>{
       const v=r[k];
       if(v==null) return '';
       if(typeof v==='number') return v;
@@ -785,6 +816,7 @@ function boot(){
   AS_OF = (DATA.meta?.generated_at||'').slice(0,10) || '2026-09-03';
   initTheme();
   initUI();
+  initColMan();
   refresh();
   const ld=document.getElementById('loading'); if(ld) ld.style.display='none';
 }

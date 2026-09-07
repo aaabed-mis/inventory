@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Inventory Dashboard</title>
   <link rel="icon" type="image/x-icon" href="assets/favicon.ico" />
-  <link rel="stylesheet" href="styles.css?v=20260907e" />
+  <link rel="stylesheet" href="styles.css?v=20260907f" />
 </head>
 <body>
   <div id="scale-wrap">
@@ -140,6 +140,10 @@
           <option value="0">All</option>
         </select>
         <button id="export-sku-csv" class="btn-export">Export CSV</button>
+        <div class="colman">
+          <button id="colman-toggle" class="btn-export" title="Show / hide columns">⚙ Columns</button>
+          <div class="colman-menu" id="colman-menu"></div>
+        </div>
       </div>
     </div>
     <div class="table-scroll">
@@ -204,7 +208,7 @@
   <div class="loading" id="loading"><div><div class="spin"></div>Loading inventory data…</div></div>
 
   <script src="assets/chart.umd.min.js"></script>
-  <script src="data/data.js?v=20260907e"></script>
-  <script src="app.js?v=20260907e"></script>
+  <script src="data/data.js?v=20260907f"></script>
+  <script src="app.js?v=20260907f"></script>
 </body>
 </html>

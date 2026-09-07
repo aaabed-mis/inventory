@@ -127,6 +127,15 @@ code{background:var(--panel-2);padding:1px 6px;border-radius:6px;font-size:12px;
 .table-actions{display:flex;align-items:center;gap:12px}
 .btn-export{background:var(--accent);border:none;color:#fff;font-weight:600;padding:0 14px;height:38px;border-radius:9px;cursor:pointer;font-size:12.5px;display:inline-flex;align-items:center}
 .btn-export:hover{filter:brightness(1.08)}
+/* Column manager (Material Analysis) */
+.colman{position:relative}
+.colman-menu{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:40;min-width:190px;max-height:360px;overflow:auto;
+  background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px;box-shadow:var(--shadow)}
+.colman-menu.open{display:block}
+.colman-item{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:12.5px;user-select:none}
+.colman-item:hover{background:var(--panel-2)}
+.colman-item input{accent-color:var(--accent);cursor:pointer}
+.colman-item span{color:var(--text)}
 .table-scroll{overflow:auto;max-height:560px;border:1px solid var(--line);border-radius:10px}
 table{border-collapse:collapse;width:100%;font-size:12.5px}
 thead th{position:sticky;top:0;background:var(--panel-2);color:var(--muted);text-align:left;
