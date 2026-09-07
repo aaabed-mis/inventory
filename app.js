@@ -453,10 +453,12 @@ function drawSkuTable(skus){
 function setupSkuResize(){
   const tbl=document.getElementById('sku-table'); if(!tbl) return;
   const cols=SKU_COLS;
-  // (re)build colgroup so resized widths persist across renders
+  // (re)build colgroup (widths here are just a hint in auto layout — cells carry the real width)
   let cg=tbl.querySelector('colgroup');
   if(!cg){ cg=document.createElement('colgroup'); tbl.insertBefore(cg, tbl.querySelector('thead')); }
-  cg.innerHTML=cols.map(c=>{ const w=state.colWidths[c.k]; return w?`<col style="width:${w}px">`:'<col>'; }).join('');
+  cg.innerHTML=cols.map(c=>'<col>').join('');
+  // re-apply any persisted widths to the cells of each column
+  cols.forEach(c=>{ if(state.colWidths[c.k]) applySkuColWidth(c.k, state.colWidths[c.k]); });
   // add a drag handle to each header cell
   tbl.querySelectorAll('thead th').forEach((th,i)=>{
     const k=cols[i]&&cols[i].k; if(!k) return;
@@ -466,6 +468,14 @@ function setupSkuResize(){
     r.addEventListener('click', e=>e.stopPropagation()); // dragging a handle must not sort
     th.appendChild(r);
   });
+}
+function applySkuColWidth(k, w){
+  const tbl=document.getElementById('sku-table'); if(!tbl) return;
+  const idx=SKU_COLS.findIndex(c=>c.k===k); if(idx<0) return;
+  const n=idx+1;
+  const col=tbl.querySelector(`colgroup > col:nth-child(${n})`); if(col) col.style.width=w+'px';
+  // set width on every cell in this column (th + tbody td) — works in table-layout:auto
+  tbl.querySelectorAll(`thead th:nth-child(${n}), tbody td:nth-child(${n})`).forEach(c=>c.style.width=w+'px');
 }
 let skuResize=null;
 document.addEventListener('mousedown', e=>{
@@ -478,10 +488,7 @@ document.addEventListener('mousemove', e=>{
   if(!skuResize) return;
   const w=Math.max(60, Math.round(skuResize.startW + (e.clientX-skuResize.startX)));
   state.colWidths[skuResize.k]=w;
-  const cg=document.querySelector('#sku-table colgroup');
-  const idx=SKU_COLS.findIndex(c=>c.k===skuResize.k);
-  const col=cg&&idx>=0?cg.children[idx]:null;
-  if(col) col.style.width=w+'px';
+  applySkuColWidth(skuResize.k, w);
 });
 document.addEventListener('mouseup', ()=>{
   if(skuResize){ skuResize=null; document.querySelectorAll('.th-resizer').forEach(x=>x.classList.remove('active')); }
