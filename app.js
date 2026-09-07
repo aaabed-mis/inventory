@@ -630,7 +630,7 @@ const IT_HEAD=['PO','Item','Material','Description','From Plant','To Plant','Qty
 const IT_CSV_KEYS=['po','item','matnr','maktx','fromName','toName','qty','uom','value','po_date'];
 function plantName(p){ const pl=DATA.plants||{}; return (pl[p]&&pl[p].name1)||''; }
 function plantLabel(p){ const n=plantName(p); return p ? (n ? p+' – '+n : p) : '—'; }
-function itValue(r){ const mp=(DATA.mats[r.matnr]&&DATA.mats[r.matnr].ma_price)||0; return r.qty*mp; }
+function itValue(r){ const mp=(DATA.mats[r.matnr]&&DATA.mats[r.matnr].ma_price)||0; const u=r.umrez||1; return r.qty*u*mp; }
 function intransitRows(){
   const q=state.search.trim().toLowerCase();
   const rows=[];
