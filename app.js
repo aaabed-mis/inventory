@@ -450,40 +450,38 @@ function drawSkuTable(skus){
   document.getElementById('next').disabled=state.page>=pages;
   setupSkuResize();
 }
+const SKU_DEF_WIDTHS={matnr:95,maktx:280,maabc:48,umrez:55,plantCount:58,qty:90,value:120,qW:95,dailyDemand:95,coverageMo:100,leadTime:68,safetyStock:90,target:95,fcQty:100,excessQty:88,excessValue:120,incQty:95,status:120,risk:95,reorder:88,lastSale:95};
 function setupSkuResize(){
   const tbl=document.getElementById('sku-table'); if(!tbl) return;
   const cols=SKU_COLS;
-  // (re)build colgroup (widths here are just a hint in auto layout — cells carry the real width)
+  // (re)build colgroup with default + persisted widths — honored under table-layout:fixed
   let cg=tbl.querySelector('colgroup');
   if(!cg){ cg=document.createElement('colgroup'); tbl.insertBefore(cg, tbl.querySelector('thead')); }
-  cg.innerHTML=cols.map(c=>'<col>').join('');
-  // re-apply any persisted widths to the cells of each column
-  cols.forEach(c=>{ if(state.colWidths[c.k]) applySkuColWidth(c.k, state.colWidths[c.k]); });
-  // add a drag handle to each header cell
+  cg.innerHTML=cols.map(c=>`<col style="width:${state.colWidths[c.k]||SKU_DEF_WIDTHS[c.k]||120}px">`).join('');
+  // add a drag handle to each header cell, binding mousedown directly (not delegation)
   tbl.querySelectorAll('thead th').forEach((th,i)=>{
     const k=cols[i]&&cols[i].k; if(!k) return;
     if(th.querySelector('.th-resizer')) return;
     const r=document.createElement('div');
     r.className='th-resizer'; r.dataset.k=k;
     r.addEventListener('click', e=>e.stopPropagation()); // dragging a handle must not sort
+    r.addEventListener('mousedown', e=>{
+      e.preventDefault(); e.stopPropagation();
+      const w=th.getBoundingClientRect().width;
+      skuResize={k, startX:e.clientX, startW:w};
+      r.classList.add('active');
+      skuResize.handle=r;
+    });
     th.appendChild(r);
   });
 }
 function applySkuColWidth(k, w){
   const tbl=document.getElementById('sku-table'); if(!tbl) return;
   const idx=SKU_COLS.findIndex(c=>c.k===k); if(idx<0) return;
-  const n=idx+1;
-  const col=tbl.querySelector(`colgroup > col:nth-child(${n})`); if(col) col.style.width=w+'px';
-  // set width on every cell in this column (th + tbody td) — works in table-layout:auto
-  tbl.querySelectorAll(`thead th:nth-child(${n}), tbody td:nth-child(${n})`).forEach(c=>c.style.width=w+'px');
+  const col=tbl.querySelector(`colgroup > col:nth-child(${idx+1})`);
+  if(col) col.style.width=w+'px';
 }
 let skuResize=null;
-document.addEventListener('mousedown', e=>{
-  const h=e.target.closest && e.target.closest('.th-resizer'); if(!h) return;
-  const th=h.parentElement; e.preventDefault();
-  skuResize={k:h.dataset.k, startX:e.clientX, startW:th.getBoundingClientRect().width};
-  h.classList.add('active');
-});
 document.addEventListener('mousemove', e=>{
   if(!skuResize) return;
   const w=Math.max(60, Math.round(skuResize.startW + (e.clientX-skuResize.startX)));
@@ -491,7 +489,7 @@ document.addEventListener('mousemove', e=>{
   applySkuColWidth(skuResize.k, w);
 });
 document.addEventListener('mouseup', ()=>{
-  if(skuResize){ skuResize=null; document.querySelectorAll('.th-resizer').forEach(x=>x.classList.remove('active')); }
+  if(skuResize){ if(skuResize.handle) skuResize.handle.classList.remove('active'); skuResize=null; }
 });
 function exportSkuCsv(skus){
   const sorted=[...skus].sort((x,y)=>{

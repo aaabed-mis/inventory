@@ -136,6 +136,10 @@ thead th:hover{color:var(--text)}
 thead th:hover .th-resizer,.th-resizer.active{border-right-color:var(--accent);background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--accent) 55%,transparent))}
 tbody td{padding:9px 12px;border-bottom:1px solid rgba(42,54,71,.5);white-space:nowrap}
 tbody tr:hover{background:rgba(79,140,255,.06)}
+/* Material Analysis: fixed layout so drag-resized colgroup widths are honored */
+#sku-table{table-layout:fixed}
+#sku-table tbody td{overflow:hidden;text-overflow:ellipsis}
+#sku-table tbody td:nth-child(2){white-space:normal;overflow-wrap:anywhere}
 td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .pager{display:flex;align-items:center;gap:12px;padding:12px 2px 0;flex-wrap:wrap}
 .btn-page{background:var(--panel);border:1px solid var(--line);color:var(--text);padding:7px 14px;border-radius:9px;cursor:pointer;font-weight:600}
