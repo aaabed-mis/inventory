@@ -186,7 +186,6 @@ details[open] .method-summary{margin-bottom:4px}
 .method-body li{margin-bottom:5px}
 .method-body b{color:var(--text)}
 .method-body code{background:var(--panel-2);padding:0 5px;border-radius:5px;font-size:11px}
-.method-note{margin:6px 0 10px}
 .disclaimer{background:color-mix(in srgb,var(--warn) 10%,var(--panel));border:1px solid color-mix(in srgb,var(--warn) 45%,transparent);border-left:4px solid var(--warn);border-radius:8px;padding:10px 12px;font-size:12.5px;line-height:1.55}
 .disclaimer b{color:var(--text)}
 
