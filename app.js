@@ -283,7 +283,7 @@ function aggregate(skus){
     a.byMatnr[mk]=(a.byMatnr[mk]||0)+s.value;
   }
   a.coverageDays = a.totalDaily>0 ? a.invQty/a.totalDaily : null;
-  a.intransitValue = sumIntransitValue(); a.intransitQty = sumIntransitQty(); a.intransitLines = DATA.intransit?DATA.intransit.length:0;
+  a.intransitValue = sumIntransitValue(); a.intransitQty = sumIntransitQty(); a.intransitLines = intransitRows().length;
   return a;
 }
 
@@ -631,18 +631,23 @@ const IT_CSV_KEYS=['po','item','matnr','maktx','fromName','toName','qty','uom','
 function plantName(p){ const pl=DATA.plants||{}; return (pl[p]&&pl[p].name1)||''; }
 function plantLabel(p){ const n=plantName(p); return p ? (n ? p+' – '+n : p) : '—'; }
 function itValue(r){ const mp=(DATA.mats[r.matnr]&&DATA.mats[r.matnr].ma_price)||0; const u=r.umrez||1; return r.qty*u*mp; }
+/* intransit is scoped to the active plant/vkorg filter: a shipment counts when its
+   source OR destination plant is eligible (STO legs cross plants within a sales org). */
+function itPlantOk(r, ok){ return ok.has(r.to) || ok.has(r.from); }
 function intransitRows(){
   const q=state.search.trim().toLowerCase();
+  const ok=eligiblePlants();
   const rows=[];
   for(const r of DATA.intransit||[]){
+    if(!itPlantOk(r, ok)) continue;
     const mat=DATA.mats[r.matnr]||{};
     if(q && !(r.matnr+' '+(mat.maktx||'')).toLowerCase().includes(q)) continue;
     rows.push({...r, maktx:mat.maktx||'', fromName:plantLabel(r.from), toName:plantLabel(r.to), value:itValue(r)});
   }
   return rows;
 }
-function sumIntransitValue(){ return (DATA.intransit||[]).reduce((s,r)=>s+itValue(r),0); }
-function sumIntransitQty(){ return (DATA.intransit||[]).reduce((s,r)=>s+(r.qty||0),0); }
+function sumIntransitValue(){ const ok=eligiblePlants(); return (DATA.intransit||[]).reduce((s,r)=>itPlantOk(r,ok)?s+itValue(r):s,0); }
+function sumIntransitQty(){ const ok=eligiblePlants(); return (DATA.intransit||[]).reduce((s,r)=>itPlantOk(r,ok)?s+(r.qty||0):s,0); }
 function drawItTable(rows){
   const cols=IT_COLS;
   document.querySelector('#it-table thead').innerHTML=
