@@ -338,14 +338,14 @@ intransit = []
 try:
     con = duckdb.connect(INTRANSIT, read_only=True)
     for po, item, matnr, frm, to, sloc, qty, umrez, uom, poc in con.execute(
-        "SELECT DISTINCT po_number, po_item, material_number, \"from\", \"to\", storage_location, quantity, umrez, order_uom, po_creation_date "
-        "FROM sap_prd.fact_intransit"
+            "SELECT DISTINCT ebeln, ebelp, matnr, \"from\", \"to\", lgort, menge, umrez, meins, aedat "
+            "FROM sap_prd.fact_intransit"
     ).fetchall():
         intransit.append({
-            "po": po or "", "item": item or "", "matnr": strip_matnr(matnr),
-            "from": frm or "", "to": to or "", "sloc": sloc or "",
-            "qty": round(float(qty or 0), 4), "umrez": float(umrez or 1.0), "uom": uom or "",
-            "po_date": poc.isoformat() if poc else None,
+                    "po": po or "", "item": item or "", "matnr": strip_matnr(matnr),
+                    "from": frm or "", "to": to or "", "sloc": sloc or "",
+                    "qty": round(float(qty or 0), 4), "umrez": float(umrez or 1.0), "uom": uom or "",
+                    "po_date": poc[:10] if poc and len(str(poc).strip()) >= 8 else None,
         })
     con.close()
 except Exception as e:
